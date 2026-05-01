@@ -4,6 +4,7 @@ const path = require('path');
 const SNAPSHOT_DIR = path.resolve(process.cwd(), 'data', 'dashboard');
 const SNAPSHOT_PATH = path.join(SNAPSHOT_DIR, 'stock-dashboard-snapshot.json');
 const MAX_SNAPSHOT_BYTES = 700 * 1024;
+const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
 const DEFAULT_SYMBOLS = ['2330.TW', '0050.TW', '2454.TW', 'AAPL', 'NVDA', 'TSM'];
 const RANGE_MAP = {
     '1D': { range: '1d', interval: '5m' },
@@ -118,6 +119,119 @@ function getDisplaySymbol(symbol) {
 
 function inferMarket(symbol) {
     return /\.(TW|TWO)$/.test(symbol) ? 'tw' : 'us';
+}
+
+function formatDateForQuery(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function decodeHtml(value) {
+    return String(value || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#x2F;/g, '/')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function resolveDuckDuckGoUrl(value) {
+    const raw = decodeHtml(value);
+    try {
+        const parsed = new URL(raw.startsWith('//') ? `https:${raw}` : raw);
+        const uddg = parsed.searchParams.get('uddg');
+        if (uddg) return decodeURIComponent(uddg);
+        return parsed.toString();
+    } catch {
+        return raw;
+    }
+}
+
+function buildStockNewsQuery(quoteOrSymbol, options = {}) {
+    const now = options.now instanceof Date ? options.now : new Date();
+    const since = options.since instanceof Date ? options.since : new Date(now.getTime() - TWO_WEEKS_MS);
+    const until = options.until instanceof Date ? options.until : now;
+    const symbol = normalizeSymbol(quoteOrSymbol?.yahooSymbol || quoteOrSymbol?.symbol || quoteOrSymbol);
+    const displaySymbol = getDisplaySymbol(symbol);
+    const name = String(quoteOrSymbol?.name || TW_FALLBACK_NAMES[symbol]?.name || displaySymbol).trim();
+    const market = quoteOrSymbol?.market || inferMarket(symbol);
+    const sinceText = formatDateForQuery(since);
+    const untilText = formatDateForQuery(until);
+    const terms = market === 'tw'
+        ? `${displaySymbol} ${name} 股票 新聞 最新`
+        : `${displaySymbol} ${name} 股票 新聞 美股 最新`;
+
+    return {
+        symbol: displaySymbol,
+        yahooSymbol: symbol,
+        name,
+        market,
+        languagePriority: 'zh-TW',
+        dateWindow: {
+            since: sinceText,
+            until: untilText,
+            days: Math.round((until.getTime() - since.getTime()) / (24 * 60 * 60 * 1000)),
+        },
+        query: `${terms} after:${sinceText} before:${untilText}`,
+    };
+}
+
+async function fetchStockNews(quoteOrSymbol, options = {}) {
+    const queryInfo = buildStockNewsQuery(quoteOrSymbol, options);
+    if (!queryInfo.yahooSymbol) throw createHttpError(400, 'Missing symbol for news search');
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(queryInfo.query)}&kl=tw-tzh&df=m`;
+    const html = await fetchJsonLikeText(url);
+    const results = [];
+    const anchorRegex = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+    const anchors = Array.from(html.matchAll(anchorRegex));
+
+    for (const [index, linkMatch] of anchors.entries()) {
+        const nextAnchorIndex = anchors[index + 1]?.index ?? html.length;
+        const block = html.slice(linkMatch.index || 0, nextAnchorIndex);
+        const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div)>/);
+        const sourceMatch = block.match(/class="result__url"[^>]*>([\s\S]*?)<\/(?:a|span)>/);
+        const title = decodeHtml(linkMatch[2]);
+        const resultUrl = resolveDuckDuckGoUrl(linkMatch[1]);
+        const snippet = decodeHtml(snippetMatch?.[1] || '');
+        const source = decodeHtml(sourceMatch?.[1] || '');
+        if (!title || !resultUrl) continue;
+        results.push({
+            title,
+            url: resultUrl,
+            snippet,
+            source,
+        });
+        if (results.length >= (options.limit || 6)) break;
+    }
+
+    return {
+        ...queryInfo,
+        source: 'DuckDuckGo HTML search',
+        fetchedAt: new Date().toISOString(),
+        results,
+    };
+}
+
+async function fetchJsonLikeText(url) {
+    const response = await fetch(url, {
+        headers: {
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.7,en;q=0.6',
+            'Referer': 'https://html.duckduckgo.com/',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 GolemDashboard/1.0',
+        },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+        throw createHttpError(response.status === 404 ? 404 : 502, `DuckDuckGo request failed (${response.status})`);
+    }
+    return text;
 }
 
 async function fetchJson(url) {
@@ -382,6 +496,7 @@ async function refreshStockSnapshot(options = {}) {
     }
 
     let indicators = previous.indicators || null;
+    let news = previous.news || null;
     const historyErrors = [];
     try {
         const history = normalizeHistory(selectedSymbol, await fetchChart(selectedSymbol, rangeConfig.range, rangeConfig.interval));
@@ -392,6 +507,13 @@ async function refreshStockSnapshot(options = {}) {
 
     const visibleQuotes = quotes.filter((quote) => marketFilter === 'all' || quote.market === marketFilter);
     const selected = quotes.find((quote) => quote.yahooSymbol === selectedSymbol) || quotes[0] || previous.selected || null;
+    if (selected && options.includeNews !== false) {
+        try {
+            news = await fetchStockNews(selected, { limit: 6 });
+        } catch (error) {
+            historyErrors.push({ symbol: selectedSymbol, error: `news: ${error.message || String(error)}` });
+        }
+    }
     return saveStockSnapshot({
         source: 'dashboard-stock-analysis',
         dataStatus: quoteErrors.length || historyErrors.length ? 'partial-live-market-data' : 'live-market-data',
@@ -399,6 +521,7 @@ async function refreshStockSnapshot(options = {}) {
         selectedRange,
         selected,
         indicators,
+        news,
         watchlist: visibleQuotes.length ? visibleQuotes : quotes,
         breadth: calculateBreadth(visibleQuotes.length ? visibleQuotes : quotes),
         quoteErrors: [...quoteErrors, ...historyErrors],
@@ -448,6 +571,8 @@ module.exports = {
     saveStockSnapshot,
     readStockSnapshot,
     refreshStockSnapshot,
+    fetchStockNews,
+    buildStockNewsQuery,
     buildStockSnapshotInjection,
     buildFreshStockSnapshotInjection,
 };

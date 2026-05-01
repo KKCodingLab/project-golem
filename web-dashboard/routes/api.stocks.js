@@ -3,7 +3,14 @@ const {
     saveStockSnapshot,
     readStockSnapshot,
     refreshStockSnapshot,
+    fetchStockNews,
+    buildStockNewsQuery,
 } = require('../../src/services/StockDashboardSnapshot');
+const {
+    refreshStockSymbolDirectory,
+    searchStockSymbols,
+    getDirectory,
+} = require('../../src/services/StockSymbolDirectory');
 
 const CACHE_TTL_MS = 45 * 1000;
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -32,26 +39,47 @@ function createHttpError(statusCode, message) {
     return error;
 }
 
+function attachCacheMeta(value, meta) {
+    if (Array.isArray(value)) {
+        const nextValue = value.slice();
+        Object.defineProperty(nextValue, '_cache', {
+            value: meta,
+            enumerable: false,
+            configurable: true,
+        });
+        return nextValue;
+    }
+    if (value && typeof value === 'object') {
+        return { ...value, _cache: meta };
+    }
+    return value;
+}
+
+function asArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+
 function getCached(key, options = {}) {
     const item = cache.get(key);
     if (!item) return null;
     if (Date.now() > item.expiresAt) {
         if (options.allowStale) {
-            return { ...item.value, _cache: { isStale: true, cachedAt: item.cachedAt, expiresAt: item.expiresAt } };
+            return attachCacheMeta(item.value, { isStale: true, cachedAt: item.cachedAt, expiresAt: item.expiresAt });
         }
         return null;
     }
-    return { ...item.value, _cache: { isStale: false, cachedAt: item.cachedAt, expiresAt: item.expiresAt } };
+    return attachCacheMeta(item.value, { isStale: false, cachedAt: item.cachedAt, expiresAt: item.expiresAt });
 }
 
 function setCached(key, value, ttlMs = CACHE_TTL_MS) {
     const cachedAt = new Date().toISOString();
+    const expiresAt = Date.now() + ttlMs;
     cache.set(key, {
         value,
         cachedAt,
-        expiresAt: Date.now() + ttlMs,
+        expiresAt,
     });
-    return { ...value, _cache: { isStale: false, cachedAt, expiresAt: Date.now() + ttlMs } };
+    return attachCacheMeta(value, { isStale: false, cachedAt, expiresAt });
 }
 
 function toNumber(value, fallback = 0) {
@@ -119,7 +147,12 @@ async function fetchJson(url) {
 }
 
 function getQuoteName(symbol, meta) {
+    const directory = getDirectory();
+    const directoryItem = Array.isArray(directory?.items)
+        ? directory.items.find((item) => item.yahooSymbol === symbol || item.symbol === getDisplaySymbol(symbol))
+        : null;
     const fallback = TW_FALLBACK_NAMES[symbol];
+    if (directoryItem?.name) return directoryItem.name;
     return meta.longName || meta.shortName || fallback?.name || getDisplaySymbol(symbol);
 }
 
@@ -138,6 +171,10 @@ function normalizeQuote(symbol, chartResult) {
     const fiftyTwoWeekHigh = toPositiveNullableNumber(meta.fiftyTwoWeekHigh);
     const fiftyTwoWeekLow = toPositiveNullableNumber(meta.fiftyTwoWeekLow);
     const volume = toNumber(meta.regularMarketVolume, volumes[volumes.length - 1] || 0);
+    const directory = getDirectory();
+    const directoryItem = Array.isArray(directory?.items)
+        ? directory.items.find((item) => item.yahooSymbol === symbol || item.symbol === getDisplaySymbol(symbol))
+        : null;
     const fallback = TW_FALLBACK_NAMES[symbol] || {};
 
     return {
@@ -160,7 +197,7 @@ function normalizeQuote(symbol, chartResult) {
         volume,
         turnover: price * volume,
         marketCap: toPositiveNullableNumber(meta.marketCap),
-        sector: fallback.sector || (inferMarket(symbol) === 'tw' ? '台股' : 'US Equity'),
+        sector: directoryItem?.sector || fallback.sector || (inferMarket(symbol) === 'tw' ? '台股' : 'US Equity'),
         dataSource: 'Yahoo Finance',
         lastUpdatedAt: meta.regularMarketTime
             ? new Date(Number(meta.regularMarketTime) * 1000).toISOString()
@@ -413,6 +450,10 @@ function searchTaiwanFallback(query) {
 module.exports = function registerStockRoutes() {
     const router = express.Router();
 
+    refreshStockSymbolDirectory().catch((error) => {
+        console.warn('[Stocks] Initial symbol directory refresh failed:', error.message || error);
+    });
+
     router.get('/api/stocks/quotes', async (req, res) => {
         try {
             const symbolsRaw = String(req.query.symbols || DEFAULT_SYMBOLS.join(','));
@@ -475,23 +516,29 @@ module.exports = function registerStockRoutes() {
             const query = String(req.query.q || '').trim();
             if (!query) return res.json({ success: true, results: [] });
             const normalizedSymbol = normalizeSymbol(query);
+            const [directoryResultsRaw, yahooResultsRaw, taiwanFallbackRaw] = await Promise.all([
+                searchStockSymbols(query, { limit: 16 }).catch(() => []),
+                searchYahoo(query).catch(() => []),
+                Promise.resolve(searchTaiwanFallback(query)),
+            ]);
+            const directoryResults = asArray(directoryResultsRaw);
+            const yahooResults = asArray(yahooResultsRaw);
+            const taiwanFallback = asArray(taiwanFallbackRaw);
             const directTaiwan = isTaiwanSymbol(normalizedSymbol)
                 ? [{
                     symbol: getDisplaySymbol(normalizedSymbol),
                     yahooSymbol: normalizedSymbol,
-                    name: TW_FALLBACK_NAMES[normalizedSymbol]?.name || getDisplaySymbol(normalizedSymbol),
+                    name: directoryResults.find((item) => item.yahooSymbol === normalizedSymbol)?.name ||
+                        TW_FALLBACK_NAMES[normalizedSymbol]?.name ||
+                        getDisplaySymbol(normalizedSymbol),
                     market: 'tw',
                     exchange: normalizedSymbol.endsWith('.TWO') ? 'TPEX' : 'TWSE',
-                    type: 'EQUITY',
-                    dataSource: 'Taiwan symbol normalizer',
+                    type: directoryResults.find((item) => item.yahooSymbol === normalizedSymbol)?.type || 'EQUITY',
+                    dataSource: directoryResults.find((item) => item.yahooSymbol === normalizedSymbol)?.dataSource || 'Taiwan symbol normalizer',
                 }]
                 : [];
-            const [yahooResults, taiwanFallback] = await Promise.all([
-                searchYahoo(query).catch(() => []),
-                Promise.resolve(searchTaiwanFallback(query)),
-            ]);
             const unique = new Map();
-            [...directTaiwan, ...taiwanFallback, ...yahooResults].forEach((item) => {
+            [...directTaiwan, ...directoryResults, ...taiwanFallback, ...yahooResults].forEach((item) => {
                 if (!item?.yahooSymbol || unique.has(item.yahooSymbol)) return;
                 unique.set(item.yahooSymbol, item);
             });
@@ -499,11 +546,46 @@ module.exports = function registerStockRoutes() {
             return res.json({
                 success: true,
                 results: Array.from(unique.values()).slice(0, 16),
-                dataSource: 'Yahoo Finance + local Taiwan symbol list',
+                dataSource: 'Symbol directory + Yahoo Finance fallback',
                 generatedAt: new Date().toISOString(),
             });
         } catch (error) {
             console.error('[Stocks] Failed to search symbols:', error);
+            return res.status(error.statusCode || 500).json({ error: error.message });
+        }
+    });
+
+    router.post('/api/stocks/symbols/refresh', async (req, res) => {
+        try {
+            const directory = await refreshStockSymbolDirectory({ force: req.body?.force === true });
+            return res.json({
+                success: true,
+                generatedAt: directory.generatedAt,
+                count: Array.isArray(directory.items) ? directory.items.length : 0,
+                sourceStatus: directory.sourceStatus || [],
+            });
+        } catch (error) {
+            console.error('[Stocks] Failed to refresh symbol directory:', error);
+            return res.status(error.statusCode || 500).json({ error: error.message });
+        }
+    });
+
+    router.get('/api/stocks/news', async (req, res) => {
+        try {
+            const symbol = normalizeSymbol(req.query.symbol);
+            if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
+            const quote = req.query.name
+                ? { symbol, yahooSymbol: symbol, name: String(req.query.name || ''), market: inferMarket(symbol) }
+                : null;
+            const news = await fetchStockNews(quote || symbol, { limit: 6 });
+            return res.json({
+                success: true,
+                news,
+                query: buildStockNewsQuery(quote || symbol),
+                generatedAt: new Date().toISOString(),
+            });
+        } catch (error) {
+            console.error('[Stocks] Failed to fetch news:', error);
             return res.status(error.statusCode || 500).json({ error: error.message });
         }
     });

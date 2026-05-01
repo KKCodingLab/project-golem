@@ -13,6 +13,7 @@ google-session.json
 # 2. Node.js 核心
 # ==========================================
 node_modules/
+.npm-cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -82,5 +83,6 @@ moltbot_auth.json
 .golem.pid
 profiles
 data/temp_uploads
+data/dashboard/stock-symbol-directory.json
 notebooklm_venv
 .gemini/

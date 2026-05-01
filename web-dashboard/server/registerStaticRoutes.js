@@ -27,6 +27,39 @@ module.exports = function registerStaticRoutes(server) {
     const isDevMode = process.env.DASHBOARD_DEV_MODE === 'true';
     const publicPath = path.join(__dirname, '..', 'out');
 
+    function sendDashboardFile(res, preferredPath) {
+        const fallbackPath = path.join(publicPath, 'dashboard.html');
+        if (preferredPath && fs.existsSync(preferredPath)) {
+            return res.sendFile(preferredPath);
+        }
+        if (fs.existsSync(fallbackPath)) {
+            return res.sendFile(fallbackPath);
+        }
+
+        return res.status(503).send(`<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard 尚未建置</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1117; color: #e5edf5; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(680px, calc(100vw - 32px)); border: 1px solid rgba(148, 163, 184, .28); border-radius: 12px; padding: 28px; background: rgba(15, 23, 42, .72); box-shadow: 0 24px 80px rgba(0, 0, 0, .32); }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { color: #9ca3af; line-height: 1.7; }
+    code { display: inline-block; margin-top: 8px; padding: 4px 8px; border-radius: 6px; background: #020617; color: #67e8f9; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Dashboard 尚未建置</h1>
+    <p>找不到 <code>web-dashboard/out/dashboard.html</code>。請先完成 Dashboard 建置，或用開發模式啟動。</p>
+    <p><code>cd web-dashboard && npm install && npm run build</code></p>
+  </main>
+</body>
+</html>`);
+    }
+
     if (!isDevMode) {
         server.app.use(express.static(publicPath, {
             extensions: ['html'],
@@ -88,8 +121,18 @@ module.exports = function registerStaticRoutes(server) {
         '/dashboard',
         '/dashboard/terminal',
         '/dashboard/agents',
+        '/dashboard/chat',
+        '/dashboard/diary',
+        '/dashboard/memory',
         '/dashboard/office',
         '/dashboard/mcp',
+        '/dashboard/persona',
+        '/dashboard/prompt-pool',
+        '/dashboard/prompt-trends',
+        '/dashboard/settings',
+        '/dashboard/setup',
+        '/dashboard/skills',
+        '/dashboard/stocks',
         '/dashboard/system-setup'
     ];
 
@@ -121,10 +164,7 @@ module.exports = function registerStaticRoutes(server) {
         server.app.get(route, (req, res) => {
             const fileName = route === '/dashboard' ? 'dashboard.html' : `${route.replace(/^\//, '')}.html`;
             const fullPath = path.join(publicPath, fileName);
-            if (fs.existsSync(fullPath)) {
-                return res.sendFile(fullPath);
-            }
-            return res.sendFile(path.join(publicPath, 'dashboard.html'));
+            return sendDashboardFile(res, fullPath);
         });
     });
 
@@ -133,9 +173,6 @@ module.exports = function registerStaticRoutes(server) {
         const htmlFileName = `${normalizedPath.replace(/^\//, '')}.html`;
         const fullPath = path.join(publicPath, htmlFileName);
 
-        if (fs.existsSync(fullPath)) {
-            return res.sendFile(fullPath);
-        }
-        return res.sendFile(path.join(publicPath, 'dashboard.html'));
+        return sendDashboardFile(res, fullPath);
     });
 };

@@ -16,8 +16,10 @@ import {
     BarChart3,
     BrainCircuit,
     Check,
+    Info,
     LineChart,
     Loader2,
+    Newspaper,
     Plus,
     RefreshCcw,
     Search,
@@ -96,6 +98,7 @@ type SearchResult = {
     market: Market;
     exchange: string;
     type: string;
+    sector?: string;
     dataSource: string;
 };
 
@@ -122,6 +125,33 @@ type SearchResponse = {
     results?: SearchResult[];
 };
 
+type StockNewsItem = {
+    title: string;
+    url: string;
+    snippet: string;
+    source: string;
+};
+
+type StockNews = {
+    symbol: string;
+    yahooSymbol: string;
+    name: string;
+    query: string;
+    languagePriority: string;
+    dateWindow: {
+        since: string;
+        until: string;
+        days: number;
+    };
+    source: string;
+    fetchedAt: string;
+    results: StockNewsItem[];
+};
+
+type NewsResponse = {
+    news?: StockNews;
+};
+
 type SnapshotRefreshResponse = {
     snapshot?: StockDashboardSnapshot;
 };
@@ -133,6 +163,7 @@ type StockDashboardSnapshot = {
     selectedRange: RangeKey;
     selected: StockQuote | null;
     indicators: StockIndicators | null;
+    news: StockNews | null;
     watchlist: StockQuote[];
     breadth: {
         advancers: number;
@@ -395,15 +426,22 @@ export default function StockAnalysisPage() {
     const [range, setRange] = useState<RangeKey>("3M");
     const [historyPoints, setHistoryPoints] = useState<HistoryPoint[]>([]);
     const [indicators, setIndicators] = useState<StockIndicators | null>(null);
+    const [news, setNews] = useState<StockNews | null>(null);
     const [query, setQuery] = useState("");
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [isLoadingQuotes, setIsLoadingQuotes] = useState(true);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [isLoadingNews, setIsLoadingNews] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [sentSnapshot, setSentSnapshot] = useState(false);
     const [lastUpdatedAt, setLastUpdatedAt] = useState("");
+    const [isMounted, setIsMounted] = useState(false);
     const lastInteractionRefreshRef = useRef(0);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     useEffect(() => {
         localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
@@ -466,6 +504,27 @@ export default function StockAnalysisPage() {
             loadHistory(selectedSymbol, range),
         ]);
     }, [loadHistory, loadQuotes, range, selectedSymbol]);
+
+    const loadNews = useCallback(async (quote: StockQuote | null) => {
+        if (!quote?.yahooSymbol) {
+            setNews(null);
+            return null;
+        }
+        setIsLoadingNews(true);
+        try {
+            const data = await apiGet<NewsResponse>(
+                apiUrl(`/api/stocks/news?symbol=${encodeURIComponent(quote.yahooSymbol)}&name=${encodeURIComponent(quote.name || quote.symbol)}`)
+            );
+            setNews(data.news || null);
+            return data.news || null;
+        } catch (error) {
+            setNews(null);
+            console.warn("[Stocks] Failed to load stock news:", error);
+            return null;
+        } finally {
+            setIsLoadingNews(false);
+        }
+    }, []);
 
     useEffect(() => {
         loadQuotes();
@@ -530,6 +589,25 @@ export default function StockAnalysisPage() {
             null;
     }, [quotes, selectedSymbol, visibleQuotes]);
 
+    const searchPreview = useMemo(() => {
+        const safeQuery = query.trim();
+        if (!safeQuery) return null;
+        const normalized = normalizeSymbol(safeQuery);
+        return searchResults[0] || {
+            symbol: displaySymbol(normalized),
+            yahooSymbol: normalized,
+            name: isSearching ? (isEnglish ? "Resolving from symbol directory..." : "正在從股票清單辨識...") : (isEnglish ? "No directory match yet" : "尚無清單匹配"),
+            market: normalized.endsWith(".TW") || normalized.endsWith(".TWO") ? "tw" as Market : "us" as Market,
+            exchange: "",
+            type: "",
+            dataSource: "input",
+        };
+    }, [isEnglish, isSearching, query, searchResults]);
+
+    useEffect(() => {
+        loadNews(selectedQuote);
+    }, [loadNews, selectedQuote]);
+
     const chartData = useMemo(() => buildChartData(historyPoints, range, localeCode), [historyPoints, localeCode, range]);
 
     const marketBreadth = useMemo(() => {
@@ -548,11 +626,12 @@ export default function StockAnalysisPage() {
         selectedRange: range,
         selected: selectedQuote,
         indicators,
+        news,
         watchlist: visibleQuotes,
         breadth: marketBreadth,
         quoteErrors,
         generatedAt: new Date().toISOString(),
-    }), [indicators, marketBreadth, quoteErrors, range, selectedMarket, selectedQuote, visibleQuotes]);
+    }), [indicators, marketBreadth, news, quoteErrors, range, selectedMarket, selectedQuote, visibleQuotes]);
 
     useEffect(() => {
         if (!selectedQuote || !quotes.length) return;
@@ -638,8 +717,8 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
 
     return (
         <div className="min-h-full bg-background text-foreground" onPointerDown={refreshOnInteraction}>
-            <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-5 p-4 sm:p-6">
-                <section className="flex flex-col gap-4 border-b border-border/70 pb-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 p-4 sm:p-5">
+                <section className="flex flex-col gap-3 border-b border-border/70 pb-4 lg:flex-row lg:items-end lg:justify-between">
                     <div className="space-y-2">
                         <div className="flex items-center gap-2 text-sm font-semibold text-primary">
                             <LineChart className="h-4 w-4" />
@@ -683,6 +762,37 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                     </div>
                 </section>
 
+                <section className="grid gap-3 xl:grid-cols-[minmax(280px,0.9fr)_minmax(280px,1fr)_minmax(280px,1fr)]">
+                    <Card className="rounded-lg border-border/80">
+                        <CardContent className="flex gap-3 p-3">
+                            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                            <div className="space-y-1 text-xs leading-5 text-muted-foreground">
+                                <div className="font-semibold text-foreground">{isEnglish ? "How to use" : "使用說明"}</div>
+                                <p>{isEnglish ? "Search a symbol, select a watchlist row, then ask Golem. Quotes refresh every minute while this page is open." : "搜尋股票、點選自選股列，再請 Golem 分析。頁面停留時每分鐘自動刷新行情。"}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-lg border-border/80">
+                        <CardContent className="p-3 text-xs leading-5 text-muted-foreground">
+                            <div className="font-semibold text-foreground">{isEnglish ? "Golem commands" : "Golem 指令"}</div>
+                            <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                                <code className="rounded-md bg-secondary px-2 py-1">/stockboard 2330</code>
+                                <code className="rounded-md bg-secondary px-2 py-1">分析台積電股市看板</code>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    <Card className="rounded-lg border-border/80">
+                        <CardContent className="flex gap-3 p-3">
+                            <Newspaper className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                            <div className="space-y-1 text-xs leading-5 text-muted-foreground">
+                                <div className="font-semibold text-foreground">{isEnglish ? "News policy" : "新聞規則"}</div>
+                                <p>{isEnglish ? "News search is Chinese-first and adds a 14-day date window to the DuckDuckGo query." : "新聞搜尋中文優先，DuckDuckGo query 會加入系統日期往前兩週的時間條件。"}</p>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                </section>
+
                 <section className="grid gap-4 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
                     <Card className="rounded-lg border-border/80">
                         <CardHeader className="pb-3">
@@ -711,6 +821,24 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                                 </Button>
                             </form>
 
+                            {searchPreview && (
+                                <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="min-w-0">
+                                            <span className="font-semibold">{isEnglish ? "Searching" : "正在搜尋"} {searchPreview.symbol}</span>
+                                            <span className="ml-2 text-muted-foreground">{searchPreview.name}</span>
+                                        </span>
+                                        <span className="shrink-0 rounded-md bg-background/70 px-2 py-1 text-xs text-muted-foreground">
+                                            {searchPreview.market === "tw" ? (isEnglish ? "Taiwan" : "台股") : (isEnglish ? "US" : "美股")}
+                                            {searchPreview.exchange ? ` · ${searchPreview.exchange}` : ""}
+                                        </span>
+                                    </div>
+                                    <div className="mt-1 text-xs text-muted-foreground">
+                                        {searchPreview.sector ? `${searchPreview.sector} · ` : ""}{searchPreview.dataSource}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="min-h-[146px] rounded-lg border border-border bg-secondary/25">
                                 {isSearching ? (
                                     <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -728,7 +856,7 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                                             >
                                                 <span className="min-w-0">
                                                     <span className="block truncate text-sm font-semibold">{result.symbol} · {result.name}</span>
-                                                    <span className="block text-xs text-muted-foreground">{result.exchange || result.market.toUpperCase()} · {result.type}</span>
+                                                    <span className="block text-xs text-muted-foreground">{result.exchange || result.market.toUpperCase()} · {result.type}{result.sector ? ` · ${result.sector}` : ""} · {result.dataSource}</span>
                                                 </span>
                                                 <Plus className="h-4 w-4 text-muted-foreground" />
                                             </button>
@@ -884,6 +1012,7 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                         </CardContent>
                     </Card>
 
+                    <div className="space-y-4">
                     <Card className="rounded-lg border-border/80">
                         <CardHeader className="pb-4">
                             <CardDescription>{isEnglish ? "Volume Shape" : "量能輪廓"}</CardDescription>
@@ -893,24 +1022,26 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-[280px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={chartData.slice(-24)} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                                        <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={18} className="text-xs" />
-                                        <YAxis tickLine={false} axisLine={false} width={46} className="text-xs" tickFormatter={(value) => formatCompact(Number(value), localeCode)} />
-                                        <Tooltip
-                                            contentStyle={{
-                                                backgroundColor: "var(--color-popover)",
-                                                borderColor: "var(--color-border)",
-                                                borderRadius: 8,
-                                                boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
-                                            }}
-                                            formatter={(value) => [formatCompact(toFiniteNumber(value), localeCode), isEnglish ? "Volume" : "成交量"]}
-                                        />
-                                        <Bar dataKey="volume" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                            <div className="h-[280px] min-h-[280px] min-w-0">
+                                {isMounted ? (
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                                        <BarChart data={chartData.slice(-24)} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                            <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={18} className="text-xs" />
+                                            <YAxis tickLine={false} axisLine={false} width={46} className="text-xs" tickFormatter={(value) => formatCompact(Number(value), localeCode)} />
+                                            <Tooltip
+                                                contentStyle={{
+                                                    backgroundColor: "var(--color-popover)",
+                                                    borderColor: "var(--color-border)",
+                                                    borderRadius: 8,
+                                                    boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+                                                }}
+                                                formatter={(value) => [formatCompact(toFiniteNumber(value), localeCode), isEnglish ? "Volume" : "成交量"]}
+                                            />
+                                            <Bar dataKey="volume" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : null}
                             </div>
                             <div className="mt-4 grid grid-cols-2 gap-3">
                                 {[
@@ -927,6 +1058,49 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                             </div>
                         </CardContent>
                     </Card>
+
+                    <Card className="rounded-lg border-border/80">
+                        <CardHeader className="pb-3">
+                            <CardDescription>{isEnglish ? "Chinese-first news" : "中文優先新聞"}</CardDescription>
+                            <CardTitle className="flex items-center gap-2 text-xl">
+                                <Newspaper className="h-5 w-5 text-primary" />
+                                {selectedQuote ? `${selectedQuote.symbol} · ${selectedQuote.name}` : (isEnglish ? "Stock News" : "個股新聞")}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="rounded-lg border border-border bg-background p-3 text-xs leading-5 text-muted-foreground">
+                                {news?.dateWindow
+                                    ? `${isEnglish ? "Query" : "查詢"}: ${news.query} · ${news.dateWindow.since} ~ ${news.dateWindow.until}`
+                                    : isEnglish ? "News query adds a 14-day date window." : "新聞查詢會加入兩週內日期條件。"}
+                            </div>
+                            {isLoadingNews ? (
+                                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    {isEnglish ? "Searching news..." : "搜尋新聞中..."}
+                                </div>
+                            ) : news?.results?.length ? (
+                                <div className="space-y-2">
+                                    {news.results.slice(0, 4).map((item) => (
+                                        <a
+                                            key={item.url}
+                                            href={item.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block rounded-lg border border-border bg-background p-3 transition-colors hover:bg-accent/60"
+                                        >
+                                            <div className="line-clamp-2 text-sm font-semibold leading-5">{item.title}</div>
+                                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.snippet || item.source}</div>
+                                        </a>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="rounded-lg border border-border bg-secondary/25 p-4 text-center text-sm text-muted-foreground">
+                                    {isEnglish ? "No recent Chinese search results found." : "目前沒有找到兩週內中文優先搜尋結果。"}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                    </div>
                 </section>
 
                 <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">

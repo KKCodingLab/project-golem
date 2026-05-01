@@ -14,6 +14,44 @@ const { buildFreshStockSnapshotInjection } = require('../services/StockDashboard
 const architect = new SkillArchitect();
 console.log("🏗️ [SkillArchitect] 技能架構師已就緒 (Web Mode)");
 
+const STOCK_NAME_SYMBOLS = {
+    '台積電': '2330.TW',
+    'tsmc': 'TSM',
+    '鴻海': '2317.TW',
+    '富士康': '2317.TW',
+    '聯發科': '2454.TW',
+    '聯電': '2303.TW',
+    '元大台灣50': '0050.TW',
+    '台灣50': '0050.TW',
+    '元大高股息': '0056.TW',
+    '高股息': '0056.TW',
+    '中華電': '2412.TW',
+    '富邦金': '2881.TW',
+    '國泰金': '2882.TW',
+    '中信金': '2891.TW',
+};
+
+function normalizeStockSymbol(input) {
+    const value = String(input || '').trim().toUpperCase();
+    if (!value) return '';
+    if (/^\d{4,6}$/.test(value)) return `${value}.TW`;
+    return value.replace(/[^A-Z0-9.^=-]/g, '').slice(0, 24);
+}
+
+function extractStockSymbolsFromText(text) {
+    const found = new Set();
+    const lower = String(text || '').toLowerCase();
+    Object.entries(STOCK_NAME_SYMBOLS).forEach(([name, symbol]) => {
+        if (lower.includes(name.toLowerCase())) found.add(symbol);
+    });
+    const symbolMatches = String(text || '').match(/\b[A-Z]{1,5}\b|\b\d{4,6}(?:\.(?:TW|TWO))?\b/gi) || [];
+    symbolMatches
+        .map(normalizeStockSymbol)
+        .filter(Boolean)
+        .forEach((symbol) => found.add(symbol));
+    return Array.from(found).slice(0, 8);
+}
+
 // ============================================================
 // ⚡ NodeRouter (反射層)
 // ============================================================
@@ -212,18 +250,25 @@ class NodeRouter {
 
         const wantsStockDashboard =
             /^\/(stocks?|stockboard|stock-dashboard)(\s|$)/i.test(text) ||
+            /(分析|研究|評估|看看|幫我看).{0,24}(股票|股價|台股|美股|個股|台積電|鴻海|聯發科|NVDA|AAPL|TSM|\d{4,6})/i.test(text) ||
+            /(股票|股價|台股|美股|個股|台積電|鴻海|聯發科|NVDA|AAPL|TSM|\d{4,6}).{0,24}(分析|研究|評估|能不能|可不可以|追|買|賣)/i.test(text) ||
             /(股市|股票|行情).{0,8}(看板|dashboard)/i.test(text) ||
             /(看板|dashboard).{0,8}(股市|股票|行情)/i.test(text) ||
             /stock\s+dashboard/i.test(text);
 
         if (wantsStockDashboard) {
             const userRequest = text.replace(/^\/(stocks?|stockboard|stock-dashboard)\s*/i, '').trim() || '請分析目前股市看板。';
+            const symbols = extractStockSymbolsFromText(userRequest);
             const enrichedText = [
                 userRequest,
                 '',
-                await buildFreshStockSnapshotInjection({ trigger: 'telegram-stock-dashboard-command' }),
+                await buildFreshStockSnapshotInjection({
+                    trigger: 'telegram-stock-dashboard-command',
+                    symbols: symbols.length ? symbols : undefined,
+                    selectedSymbol: symbols[0],
+                }),
                 '',
-                '請輸出：市場概況、主要強弱標的、技術指標重點、風險提醒、接下來可觀察的價位或事件。不要做保證式投資建議。',
+                '請輸出：市場概況、主要強弱標的、技術指標重點、兩週內中文優先新聞脈絡、風險提醒、接下來可觀察的價位或事件。不要做保證式投資建議。',
             ].join('\n');
             if (typeof ctx.setTextOverride === 'function') {
                 ctx.setTextOverride(enrichedText);
