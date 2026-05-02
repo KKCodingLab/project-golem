@@ -1,0 +1,13 @@
+{
+  "id": "reflection",
+  "name": "Reflection",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "reflection",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "adaptive-learning",
+  "name": "Adaptive Learning",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "adaptive-learning",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

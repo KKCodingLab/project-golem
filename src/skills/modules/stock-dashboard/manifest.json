@@ -1,0 +1,24 @@
+{
+  "id": "stock-dashboard",
+  "name": "Stock Dashboard",
+  "description": "讀取並刷新 Dashboard 股市分析看板快照，協助分析台股、美股、自選股、技術指標與新聞脈絡。",
+  "type": "core",
+  "enabled": true,
+  "action": "stock-dashboard",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": ["assistant", "research", "safe", "autonomy"],
+  "triggers": [
+    "股市分析",
+    "股市看板",
+    "股票看板",
+    "股價",
+    "台股",
+    "美股",
+    "個股分析",
+    "stock dashboard",
+    "stockboard",
+    "market analysis"
+  ],
+  "version": "1.0.0"
+}

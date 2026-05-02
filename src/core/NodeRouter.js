@@ -124,18 +124,21 @@ class NodeRouter {
                         ).toLowerCase();
 
                         if (runtimeSkillId) {
+                            const SkillPackageRegistry = require('../managers/SkillPackageRegistry');
                             const runtimeTitle = result.name || runtimeSkillId;
                             const runtimeDescription = result.preview || "由 /learn 動態生成的使用者技能";
-                            const runtimeContent = [
-                                `# ${runtimeTitle}`,
-                                runtimeDescription,
-                                "## Runtime Action",
-                                `- action: \`${runtimeTitle}\``,
-                                "## Source",
-                                "```js",
-                                result.code || "// source unavailable",
-                                "```"
-                            ].join('\n\n');
+                            const runtimeContent = result.packagePath
+                                ? SkillPackageRegistry.buildPromptContent(SkillPackageRegistry.loadPackage(result.packagePath))
+                                : [
+                                    `# ${runtimeTitle}`,
+                                    runtimeDescription,
+                                    "## Runtime Action",
+                                    `- action: \`${runtimeSkillId}\``,
+                                    "## Source",
+                                    "```js",
+                                    result.code || "// source unavailable",
+                                    "```"
+                                ].join('\n\n');
 
                             const index = brain && brain.skillIndex
                                 ? brain.skillIndex
@@ -186,30 +189,37 @@ class NodeRouter {
             if (res.success) {
                 try {
                     const SkillIndexManager = require('../managers/SkillIndexManager');
-                    const importedId = String(require('path').basename(res.path || '', '.js')).toLowerCase();
+                    const SkillPackageRegistry = require('../managers/SkillPackageRegistry');
+                    const packageSkill = res.packagePath ? SkillPackageRegistry.loadPackage(res.packagePath) : null;
+                    const importedId = String(
+                        (packageSkill && packageSkill.id) ||
+                        require('path').basename(res.path || '', '.js')
+                    ).toLowerCase();
                     const sourceCode = require('fs').readFileSync(res.path, 'utf8');
-                    const title = res.name || importedId;
-                    const content = [
-                        `# ${title}`,
-                        "由 GOLEM_SKILL 膠囊匯入的使用者技能",
-                        "## Runtime Action",
-                        `- action: \`${title}\``,
-                        "## Source",
-                        "```js",
-                        sourceCode,
-                        "```"
-                    ].join('\n\n');
+                    const title = res.name || (packageSkill && packageSkill.id) || importedId;
+                    const content = packageSkill
+                        ? SkillPackageRegistry.buildPromptContent(packageSkill)
+                        : [
+                            `# ${title}`,
+                            "由 GOLEM_SKILL 膠囊匯入的使用者技能",
+                            "## Runtime Action",
+                            `- action: \`${importedId}\``,
+                            "## Source",
+                            "```js",
+                            sourceCode,
+                            "```"
+                        ].join('\n\n');
 
                     const index = brain && brain.skillIndex
                         ? brain.skillIndex
                         : new SkillIndexManager(brain.userDataDir);
 
                     await index.upsertSkillRecord({
-                        id: importedId,
+                        id: packageSkill ? packageSkill.id : importedId,
                         name: title,
                         description: "由 GOLEM_SKILL 匯入",
                         content,
-                        path: res.path || '',
+                        path: res.packagePath || res.path || '',
                         category: 'user_dynamic',
                         last_modified: Date.now()
                     });

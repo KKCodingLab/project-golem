@@ -2,6 +2,26 @@
 // ⚡ ResponseParser (JSON 解析器 - 寬鬆版 + 集中化 + 終極矯正 + 穿透思考模式)
 // ============================================================
 class ResponseParser {
+    static sanitizeProtocolTags(text) {
+        if (!text) return "";
+        return String(text)
+            // Envelope tags are internal routing markers. Strip both correct and commonly malformed variants.
+            .replace(/\[{1,2}\s*(?:BEGIN|END)\s*:[^\]\n\r]+?\]{1,2}/gi, '')
+            .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\s*END\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\[\s*BEGIN\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\[\s*END\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\/?GOLEM_(?:MEMORY|ACTION|REPLY)\]/gi, '')
+            .replace(/^\s*null\s*$/i, '')
+            .trim();
+    }
+
     static parse(raw) {
         const parsed = { memory: null, actions: [], reply: "" };
 
@@ -14,7 +34,7 @@ class ResponseParser {
         // 1. 獨立擷取 MEMORY
         const memoryMatch = raw.match(/\[GOLEM_MEMORY\]([\s\S]*?)(?:\[GOLEM_ACTION\]|\[GOLEM_REPLY\]|$)/i);
         if (memoryMatch && memoryMatch[1]) {
-            const content = memoryMatch[1].trim();
+            const content = ResponseParser.sanitizeProtocolTags(memoryMatch[1]);
             if (content && content !== 'null' && content !== '(無)') {
                 parsed.memory = content;
             }
@@ -104,9 +124,9 @@ class ResponseParser {
         }
 
         // 3. 獨立擷取 REPLY (✅ Fix: 遇到其他標籤或結尾時即停止，避免抓到 GOLEM_ACTION)
-        const replyMatch = raw.match(/\[GOLEM_REPLY\]([\s\S]*?)(?:\[\/?GOLEM_[A-Z]+\]|$)/i);
+        const replyMatch = raw.match(/\[GOLEM_REPLY\]([\s\S]*?)(?:\[\/?GOLEM_[A-Z]+\]|\[\[?\s*END\s*:[^\]\n\r]+?\]?\]?|$)/i);
         if (replyMatch && replyMatch[1]) {
-            parsed.reply = replyMatch[1].trim();
+            parsed.reply = ResponseParser.sanitizeProtocolTags(replyMatch[1]);
         }
 
         // ✨ [防呆機制] 如果完全沒有抓到任何結構化標籤，就把整段文字 (過濾掉雜訊) 當作 Reply
@@ -117,6 +137,7 @@ class ResponseParser {
                 .replace(/Answer now/gi, '')
                 .replace(/Gemini said/gi, '')
                 .trim();
+            cleanRaw = ResponseParser.sanitizeProtocolTags(cleanRaw);
 
             // 避免把空的字串傳給 Telegram 報錯
             if (cleanRaw) {

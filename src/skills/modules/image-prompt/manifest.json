@@ -1,0 +1,13 @@
+{
+  "id": "image-prompt",
+  "name": "Image Prompt",
+  "description": "",
+  "type": "optional",
+  "enabled": true,
+  "action": "image-prompt",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

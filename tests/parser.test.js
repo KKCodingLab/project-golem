@@ -38,6 +38,12 @@ describe('ResponseParser', () => {
         expect(result.reply).toBe("Just a plain text response");
     });
 
+    test('should strip leaked envelope end tag from reply', () => {
+        const input = "[GOLEM_REPLY] Hello world\n[END:pu7l]]";
+        const result = ResponseParser.parse(input);
+        expect(result.reply).toBe("Hello world");
+    });
+
     test('should rescue broken JSON in actions', () => {
         const input = "[GOLEM_ACTION] { \"action\": \"command\", \"parameter\": \"echo hello\" }";
         const result = ResponseParser.parse(input);

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const persona = require('./core/persona');
 const CORE_DEFINITION = require('./core/definition');
+const SkillPackageRegistry = require('../managers/SkillPackageRegistry');
 
 // ============================================================
 // 2. 技能庫 - 自動發現版 (SKILL LIBRARY v9.1+)
@@ -31,6 +32,29 @@ function loadSkills(force = false) {
                 console.warn(`⚠️ [Skills:Core] 加載失敗: ${file} - ${e.message}`);
             }
         });
+    }
+
+    for (const pkg of SkillPackageRegistry.listSkillPackages()) {
+        if (!pkg.enabled) continue;
+        const skillName = pkg.id.toUpperCase().replace(/-/g, '_');
+        try {
+            let skillModule = {};
+            if (fs.existsSync(pkg.indexPath)) {
+                delete require.cache[require.resolve(pkg.indexPath)];
+                skillModule = require(pkg.indexPath);
+            }
+            const prompt = SkillPackageRegistry.readPackagePrompt(pkg);
+            SKILLS[skillName] = {
+                ...skillModule,
+                PROMPT: skillModule.PROMPT || prompt,
+                paramsSchema: skillModule.paramsSchema,
+            };
+            if (!process.argv.includes('dashboard') || force) {
+                console.log(`✅ [Skills:Package] 已加載: ${skillName}`);
+            }
+        } catch (e) {
+            console.warn(`⚠️ [Skills:Package] 加載失敗: ${pkg.id} - ${e.message}`);
+        }
     }
 
     if (!process.argv.includes('dashboard') || force) {

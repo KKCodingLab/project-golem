@@ -9,6 +9,7 @@ const skillManager = require('../../src/managers/SkillManager');
 const skillIndexManager = require('../../src/managers/SkillIndexManager');
 const { toolsetManager } = require('../../src/managers/ToolsetManager');
 const { resolveEnabledSkills, OPTIONAL_SKILLS } = require('../../src/skills/skillsConfig');
+const SkillPackageRegistry = require('../../src/managers/SkillPackageRegistry');
 const ConfigManager = require('../../src/config');
 
 function getMaxResponseWords() {
@@ -155,13 +156,23 @@ ${text}`;
         let systemPrompt = skills.getSystemPrompt(envInfo);
         let skillMemoryText = "【系統技能庫初始化】我目前已掛載並精通以下可用技能：\n";
 
-        // --- [優化] 使用 Promise.all 平行掃描 src/skills/lib/*.md ---
-        const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
         try {
-            const files = await fs.readdir(libPath);
-            const mdFiles = files.filter(f => f.endsWith('.md'));
+            const packages = SkillPackageRegistry.listSkillPackages({ userDataDir: golemContext.userDataDir })
+                .filter(pkg => pkg.enabled !== false);
+            let packageSkillIds = packages.map(pkg => pkg.id);
+            if (packageSkillIds.length === 0) {
+                try {
+                    const legacyLibPath = path.join(process.cwd(), 'src', 'skills', 'lib');
+                    const legacyFiles = await fs.readdir(legacyLibPath);
+                    packageSkillIds = legacyFiles
+                        .filter(file => file.endsWith('.md'))
+                        .map(file => file.replace('.md', '').toLowerCase());
+                } catch (_) {
+                    packageSkillIds = [];
+                }
+            }
 
-            if (mdFiles.length > 0) {
+            if (packageSkillIds.length > 0) {
                 // Resolve enabled skills: mandatory always on, optional via env/persona
                 let personaSkills = [];
                 if (golemContext.userDataDir) {
@@ -174,8 +185,7 @@ ${text}`;
 
                 const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', personaSkills);
                 const activeTools = new Set(overrideActiveTools || toolsetManager.getActiveTools());
-                const mdSkillIds = mdFiles.map(file => file.replace('.md', '').toLowerCase());
-                const enabledMdSkillIds = mdSkillIds.filter(id => enabledSkills.has(id));
+                const enabledMdSkillIds = packageSkillIds.filter(id => enabledSkills.has(id));
                 const filteredSkillIds = enabledMdSkillIds.filter(id => activeTools.has(id));
                 const toolsetDisabledSkills = enabledMdSkillIds.filter(id => !activeTools.has(id));
 
@@ -245,7 +255,7 @@ ${maxResponseWords > 0 ? `- Length: 🚨 STRICT LIMIT 🚨 Keep your ENTIRE repl
 - **ONE-SHOT SUCCESS**: No guessing. Provide the most feasible, error-free command possible.
 - **Execution Layer**: Skills are now separated from prompts. Execute via action name.
 - ⚡ **ACTION: command**: Execute Native BASH/Shell commands.
-- 🛠️ **System Skills**: Authorized JS scripts in \`src/skills/core/*.js\` are invoked via their specific action names.
+- 🛠️ **System Skills**: Authorized skill packages in \`src/skills/modules/<skill>/\` and user packages in \`golem_memory/skills/<skill>/\` are invoked via their specific action names.
 - 🚫 **WARNING**: DO NOT use hallucinated scripts like 'shell-executor.js'. Use only native commands or authorized actions.
 - **Example**:
 \`\`\`json

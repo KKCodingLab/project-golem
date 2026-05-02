@@ -5,6 +5,7 @@ const { MANDATORY_SKILLS, OPTIONAL_SKILLS: OPTIONAL_SKILL_LIST, resolveEnabledSk
 const { ProtocolFormatter } = require('../../packages/protocol');
 const { buildOperationGuard } = require('../server/security');
 const { resolveActiveContext } = require('./utils/context');
+const SkillPackageRegistry = require('../../src/managers/SkillPackageRegistry');
 
 function extractSkillTitle(record) {
     const content = String(record.content || '');
@@ -238,6 +239,26 @@ async function collectInstalledSkills(server, golemIdQuery) {
         }
     }
 
+    const userDataDir = await resolveSkillUserDataDir(server, golemIdQuery);
+    for (const pkg of SkillPackageRegistry.listSkillPackages({ userDataDir })) {
+        if (skillsMap.has(pkg.id)) continue;
+        const content = SkillPackageRegistry.buildPromptContent(pkg);
+        const normalized = normalizeSkillRecord({
+            id: pkg.id,
+            name: pkg.name,
+            description: pkg.description,
+            content,
+            path: pkg.dir,
+            category: pkg.type || 'core',
+        }, enabledSkills);
+        if (normalized) {
+            normalized.isEnabled = pkg.type === 'user_generated'
+                ? pkg.enabled !== false
+                : normalized.isEnabled && pkg.enabled !== false;
+            skillsMap.set(pkg.id, normalized);
+        }
+    }
+
     const skillsData = Array.from(skillsMap.values());
     skillsData.sort((a, b) => {
         if (a.isEnabled && !b.isEnabled) return -1;
@@ -367,8 +388,10 @@ module.exports = function(server) {
             }
 
             const safeId = id.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
-            const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
-            const filePath = path.join(libPath, `${safeId}.md`);
+            const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
+            const packageRoot = SkillPackageRegistry.getUserSkillPackageDir(userDataDir);
+            const packageDir = path.join(packageRoot, safeId);
+            const filePath = path.join(packageDir, 'skill.md');
 
             let title = safeId;
             let parsedContent = content.toString().replace(/^\uFEFF/, '').trim();
@@ -387,14 +410,29 @@ module.exports = function(server) {
             }
 
             const finalContent = `【已載入技能：${title}】\n\n${parsedContent}`;
-            if (!fs.existsSync(libPath)) fs.mkdirSync(libPath, { recursive: true });
+            if (!fs.existsSync(packageDir)) fs.mkdirSync(packageDir, { recursive: true });
             fs.writeFileSync(filePath, finalContent, 'utf8');
-            console.log(`✨ [WebServer] Marketplace skill installed: ${safeId}.md`);
+            fs.writeFileSync(path.join(packageDir, 'manifest.json'), JSON.stringify({
+                id: safeId,
+                name: title,
+                description: '',
+                type: 'user_prompt',
+                enabled: true,
+                action: safeId,
+                entry: null,
+                prompt: 'skill.md',
+                toolsets: ['assistant'],
+                triggers: [],
+                createdBy: 'marketplace',
+                createdAt: new Date().toISOString(),
+                version: '1.0.0'
+            }, null, 2) + '\n', 'utf8');
+            console.log(`✨ [WebServer] Marketplace skill package installed: ${safeId}`);
 
             const SkillIndexManager = require('../../src/managers/SkillIndexManager');
-            const { MEMORY_BASE_DIR } = require('../../src/config');
-            const idx = new SkillIndexManager(MEMORY_BASE_DIR);
-            idx.addSkill(safeId).catch(e => console.error(`[SkillIndex] MarketplaceInstall-Add Error for ${safeId}:`, e.message));
+            const idx = new SkillIndexManager(userDataDir);
+            await idx.addSkillPackage(SkillPackageRegistry.loadPackage(packageDir)).catch(e => console.error(`[SkillIndex] MarketplaceInstall-Add Error for ${safeId}:`, e.message));
+            await idx.close();
 
             return res.json({ success: true, id: safeId });
         } catch (e) {
@@ -522,8 +560,9 @@ module.exports = function(server) {
                 return res.status(400).json({ error: 'No valid skills found in import payload' });
             }
 
-            const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
-            if (!fs.existsSync(libPath)) fs.mkdirSync(libPath, { recursive: true });
+            const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
+            const packageRoot = SkillPackageRegistry.getUserSkillPackageDir(userDataDir);
+            if (!fs.existsSync(packageRoot)) fs.mkdirSync(packageRoot, { recursive: true });
 
             const currentOptionalRaw = process.env.OPTIONAL_SKILLS || '';
             const currentOptionalSkills = currentOptionalRaw
@@ -559,13 +598,30 @@ module.exports = function(server) {
                     continue;
                 }
 
-                const filePath = path.join(libPath, `${safeId}.md`);
-                if (!overwriteExisting && fs.existsSync(filePath)) {
+                const packageDir = path.join(packageRoot, safeId);
+                const filePath = path.join(packageDir, 'skill.md');
+                if (!overwriteExisting && fs.existsSync(packageDir)) {
                     skippedExisting.push(safeId);
                     continue;
                 }
 
+                if (!fs.existsSync(packageDir)) fs.mkdirSync(packageDir, { recursive: true });
                 fs.writeFileSync(filePath, String(skill.content || '').trim(), 'utf8');
+                fs.writeFileSync(path.join(packageDir, 'manifest.json'), JSON.stringify({
+                    id: safeId,
+                    name: skill.title || safeId,
+                    description: '',
+                    type: skill.category === 'user_dynamic' ? 'user_generated' : 'user_prompt',
+                    enabled: Boolean(skill.isEnabled),
+                    action: safeId,
+                    entry: null,
+                    prompt: 'skill.md',
+                    toolsets: ['assistant'],
+                    triggers: [],
+                    createdBy: 'import',
+                    createdAt: new Date().toISOString(),
+                    version: '1.0.0'
+                }, null, 2) + '\n', 'utf8');
                 importedIds.push(safeId);
 
                 if (restoreEnabled && skill.isOptional && skill.isEnabled) {
@@ -598,12 +654,12 @@ module.exports = function(server) {
                 }
             }
 
-            const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
             const SkillIndexManager = require('../../src/managers/SkillIndexManager');
             const idx = new SkillIndexManager(userDataDir);
             try {
                 for (const id of importedIds) {
-                    await idx.addSkill(id);
+                    const pkg = SkillPackageRegistry.listSkillPackages({ userDataDir }).find(item => item.id === id);
+                    if (pkg) await idx.addSkillPackage(pkg);
                 }
             } finally {
                 await idx.close();
@@ -627,26 +683,28 @@ module.exports = function(server) {
         }
     });
 
-    router.post('/api/skills/toggle', requireSkillAdmin, (req, res) => {
+    router.post('/api/skills/toggle', requireSkillAdmin, async (req, res) => {
         try {
             const { id, enabled } = req.body;
             if (!id) return res.status(400).json({ error: "Missing skill ID" });
 
-            const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
-            if (!fs.existsSync(path.join(libPath, `${id}.md`))) {
-                return res.status(400).json({ error: `Skill "${id}" not found in lib/` });
+            const safeId = safeSkillId(id);
+            const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
+            const pkg = SkillPackageRegistry.listSkillPackages({ userDataDir }).find(item => item.id === safeId);
+            if (!pkg) {
+                return res.status(400).json({ error: `Skill "${safeId}" not found` });
             }
-            if (MANDATORY_SKILLS.includes(id)) {
-                return res.status(400).json({ error: `"${id}" is a mandatory skill and cannot be toggled` });
+            if (MANDATORY_SKILLS.includes(safeId)) {
+                return res.status(400).json({ error: `"${safeId}" is a mandatory skill and cannot be toggled` });
             }
 
             let currentStr = process.env.OPTIONAL_SKILLS || '';
             let currentSkills = currentStr.split(',').map(s => s.trim().toLowerCase()).filter(s => s !== '');
 
-            if (enabled && !currentSkills.includes(id)) {
-                currentSkills.push(id);
-            } else if (!enabled && currentSkills.includes(id)) {
-                currentSkills = currentSkills.filter(s => s !== id);
+            if (enabled && !currentSkills.includes(safeId)) {
+                currentSkills.push(safeId);
+            } else if (!enabled && currentSkills.includes(safeId)) {
+                currentSkills = currentSkills.filter(s => s !== safeId);
             }
 
             const newSkillsStr = currentSkills.join(',');
@@ -664,17 +722,23 @@ module.exports = function(server) {
                 fs.writeFileSync(envPath, envContent, 'utf8');
             }
 
+            if (fs.existsSync(pkg.manifestPath)) {
+                const manifest = JSON.parse(fs.readFileSync(pkg.manifestPath, 'utf8'));
+                manifest.enabled = Boolean(enabled);
+                fs.writeFileSync(pkg.manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+            }
+
             ProtocolFormatter._lastScanTime = 0;
 
             const SkillIndexManager = require('../../src/managers/SkillIndexManager');
-            const { MEMORY_BASE_DIR } = require('../../src/config');
-            const idx = new SkillIndexManager(MEMORY_BASE_DIR);
+            const idx = new SkillIndexManager(userDataDir);
             
             if (enabled) {
-                idx.addSkill(id).catch(e => console.error(`[SkillIndex] Toggle-Add Error for ${id}:`, e.message));
+                await idx.addSkillPackage(SkillPackageRegistry.loadPackage(pkg.dir)).catch(e => console.error(`[SkillIndex] Toggle-Add Error for ${safeId}:`, e.message));
             } else {
-                idx.removeSkill(id).catch(e => console.error(`[SkillIndex] Toggle-Remove Error for ${id}:`, e.message));
+                await idx.removeSkill(safeId).catch(e => console.error(`[SkillIndex] Toggle-Remove Error for ${safeId}:`, e.message));
             }
+            await idx.close();
 
             return res.json({ success: true, enabled, skillsStr: newSkillsStr });
         } catch (e) {
@@ -683,7 +747,7 @@ module.exports = function(server) {
         }
     });
 
-    router.post('/api/skills/create', requireSkillAdmin, (req, res) => {
+    router.post('/api/skills/create', requireSkillAdmin, async (req, res) => {
         try {
             const { id, content } = req.body;
             if (!id || !content) return res.status(400).json({ error: 'Missing id or content' });
@@ -693,24 +757,39 @@ module.exports = function(server) {
                 return res.status(400).json({ error: `Cannot overwrite mandatory skill '${safeId}'` });
             }
 
-            const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
-            const filePath = path.join(libPath, `${safeId}.md`);
+            const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
+            const packageRoot = SkillPackageRegistry.getUserSkillPackageDir(userDataDir);
+            const packageDir = path.join(packageRoot, safeId);
+            const filePath = path.join(packageDir, 'skill.md');
 
-            if (fs.existsSync(filePath)) {
+            if (fs.existsSync(packageDir)) {
                 return res.status(409).json({ error: `Skill '${safeId}' already exists` });
             }
 
-            if (!fs.existsSync(libPath)) fs.mkdirSync(libPath, { recursive: true });
+            if (!fs.existsSync(packageDir)) fs.mkdirSync(packageDir, { recursive: true });
             fs.writeFileSync(filePath, content, 'utf8');
-            console.log(`✨ [WebServer] Custom skill created: ${safeId}.md`);
+            fs.writeFileSync(path.join(packageDir, 'manifest.json'), JSON.stringify({
+                id: safeId,
+                name: extractSkillTitle({ content }) || safeId,
+                description: '',
+                type: 'user_prompt',
+                enabled: true,
+                action: safeId,
+                entry: null,
+                prompt: 'skill.md',
+                toolsets: ['assistant'],
+                triggers: [],
+                createdBy: 'dashboard',
+                createdAt: new Date().toISOString(),
+                version: '1.0.0'
+            }, null, 2) + '\n', 'utf8');
+            console.log(`✨ [WebServer] Custom skill package created: ${safeId}`);
 
-            const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
-            if (MANDATORY_SKILLS.includes(safeId) || enabledSkills.has(safeId)) {
-                const SkillIndexManager = require('../../src/managers/SkillIndexManager');
-                const { MEMORY_BASE_DIR } = require('../../src/config');
-                const idx = new SkillIndexManager(MEMORY_BASE_DIR);
-                idx.addSkill(safeId).catch(e => console.error(`[SkillIndex] Create-Add Error for ${safeId}:`, e.message));
-            }
+            const SkillIndexManager = require('../../src/managers/SkillIndexManager');
+            const idx = new SkillIndexManager(userDataDir);
+            const pkg = SkillPackageRegistry.loadPackage(packageDir);
+            await idx.addSkillPackage(pkg).catch(e => console.error(`[SkillIndex] Create-Add Error for ${safeId}:`, e.message));
+            await idx.close();
 
             return res.json({ success: true, id: safeId });
         } catch (e) {
@@ -719,7 +798,7 @@ module.exports = function(server) {
         }
     });
 
-    router.post('/api/skills/update', requireSkillAdmin, (req, res) => {
+    router.post('/api/skills/update', requireSkillAdmin, async (req, res) => {
         try {
             const { id, content } = req.body;
             if (!id || !content) return res.status(400).json({ error: 'Missing id or content' });
@@ -729,24 +808,21 @@ module.exports = function(server) {
                 return res.status(403).json({ error: `Cannot edit mandatory skill '${safeId}'` });
             }
 
-            const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
-            const filePath = path.join(libPath, `${safeId}.md`);
+            const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
+            const pkg = SkillPackageRegistry.listSkillPackages({ userDataDir }).find(item => item.id === safeId);
+            const filePath = pkg ? pkg.promptPath : '';
 
-            if (!fs.existsSync(filePath)) {
+            if (!pkg || !filePath || !fs.existsSync(filePath)) {
                 return res.status(404).json({ error: `Skill '${safeId}' not found` });
             }
 
             fs.writeFileSync(filePath, content, 'utf8');
-            console.log(`📝 [WebServer] Custom skill updated: ${safeId}.md`);
+            console.log(`📝 [WebServer] Custom skill package updated: ${safeId}`);
 
-            const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
-            if (MANDATORY_SKILLS.includes(safeId) || enabledSkills.has(safeId)) {
-                const SkillIndexManager = require('../../src/managers/SkillIndexManager');
-                const { MEMORY_BASE_DIR } = require('../../src/config');
-
-                const idx = new SkillIndexManager(MEMORY_BASE_DIR);
-                idx.addSkill(safeId).catch(e => console.error(`[SkillIndex] Update-Add Error for ${safeId}:`, e.message));
-            }
+            const SkillIndexManager = require('../../src/managers/SkillIndexManager');
+            const idx = new SkillIndexManager(userDataDir);
+            await idx.addSkillPackage(pkg).catch(e => console.error(`[SkillIndex] Update-Add Error for ${safeId}:`, e.message));
+            await idx.close();
 
             return res.json({ success: true, id: safeId });
         } catch (e) {
@@ -768,9 +844,11 @@ module.exports = function(server) {
 
             const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
             const userPath = path.join(process.cwd(), 'src', 'skills', 'user');
-            const allowedRoots = [path.resolve(libPath), path.resolve(userPath)];
-
             const userDataDir = await resolveSkillUserDataDir(server, req.query.golemId);
+            const modulePath = path.join(process.cwd(), 'src', 'skills', 'modules');
+            const generatedPath = path.join(process.cwd(), 'src', 'skills', 'generated');
+            const packageUserPath = SkillPackageRegistry.getUserSkillPackageDir(userDataDir);
+            const allowedRoots = [path.resolve(libPath), path.resolve(userPath), path.resolve(modulePath), path.resolve(generatedPath), path.resolve(packageUserPath)];
             const SkillIndexManager = require('../../src/managers/SkillIndexManager');
             const idx = new SkillIndexManager(userDataDir);
             let deletedPath = '';
@@ -787,6 +865,8 @@ module.exports = function(server) {
                 if (indexedRecord && indexedRecord.path) {
                     candidatePaths.push(String(indexedRecord.path));
                 }
+                const pkg = SkillPackageRegistry.listSkillPackages({ userDataDir }).find(item => item.id === safeId);
+                if (pkg && pkg.dir) candidatePaths.push(pkg.dir);
                 candidatePaths.push(path.join(libPath, `${safeId}.md`));
                 candidatePaths.push(path.join(userPath, `${safeId}.js`));
 
@@ -796,7 +876,11 @@ module.exports = function(server) {
                     const inAllowedRoot = allowedRoots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`));
                     if (!inAllowedRoot) continue;
                     if (!fs.existsSync(resolved)) continue;
-                    fs.unlinkSync(resolved);
+                    if (fs.statSync(resolved).isDirectory()) {
+                        fs.rmSync(resolved, { recursive: true, force: true });
+                    } else {
+                        fs.unlinkSync(resolved);
+                    }
                     deletedPath = resolved;
                     break;
                 }

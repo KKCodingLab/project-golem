@@ -1,0 +1,13 @@
+{
+  "id": "chrome-devtools",
+  "name": "Chrome Devtools",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "chrome-devtools",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

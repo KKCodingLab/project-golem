@@ -1,0 +1,13 @@
+{
+  "id": "tool-explorer",
+  "name": "Tool Explorer",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "tool-explorer",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

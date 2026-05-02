@@ -1,0 +1,13 @@
+{
+  "id": "moltbot",
+  "name": "Moltbot",
+  "description": "",
+  "type": "optional",
+  "enabled": true,
+  "action": "moltbot",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

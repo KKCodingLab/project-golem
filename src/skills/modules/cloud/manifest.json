@@ -1,0 +1,13 @@
+{
+  "id": "cloud",
+  "name": "Cloud",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "cloud",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

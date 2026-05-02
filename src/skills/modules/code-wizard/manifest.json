@@ -1,0 +1,13 @@
+{
+  "id": "code-wizard",
+  "name": "Code Wizard",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "code-wizard",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

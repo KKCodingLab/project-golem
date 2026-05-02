@@ -1,0 +1,13 @@
+{
+  "id": "reincarnate",
+  "name": "Reincarnate",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "reincarnate",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

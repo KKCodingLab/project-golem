@@ -1,0 +1,13 @@
+{
+  "id": "evolution",
+  "name": "Evolution",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "evolution",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

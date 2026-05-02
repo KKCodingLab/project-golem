@@ -1,0 +1,13 @@
+{
+  "id": "multi-agent",
+  "name": "Multi Agent",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "multi-agent",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

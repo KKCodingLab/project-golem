@@ -4,6 +4,19 @@ const SkillHandler = require('../../src/core/action_handlers/SkillHandler');
 const CommandHandler = require('../../src/core/action_handlers/CommandHandler');
 const { CONFIG } = require('../../src/config');
 
+function sanitizeReply(text) {
+    if (!text) return "";
+    if (typeof ResponseParser.sanitizeProtocolTags === 'function' && !ResponseParser.sanitizeProtocolTags._isMockFunction) {
+        return ResponseParser.sanitizeProtocolTags(text);
+    }
+    return String(text)
+        .replace(/\[{1,2}\s*(?:BEGIN|END)\s*:[^\]\n\r]+?\]{1,2}/gi, '')
+        .replace(/\[\s*(?:BEGIN|END)\s*:[^\]\n\r]+?\]\]/gi, '')
+        .replace(/\[\[?\s*(?:BEGIN|END)\s*:[^\]\n\r]+?\]?\]?/gi, '')
+        .replace(/\[\/?GOLEM_(?:MEMORY|ACTION|REPLY)\]/gi, '')
+        .trim();
+}
+
 // ============================================================
 // 🧬 NeuroShunter (神經分流中樞 - 核心路由器)
 // ============================================================
@@ -39,6 +52,9 @@ class NeuroShunter {
 
         if (parsed.reply && parsed.reply.includes('[INTERVENE]')) {
             parsed.reply = parsed.reply.replace(/\[INTERVENE\]/g, '').trim();
+        }
+        if (parsed.reply) {
+            parsed.reply = sanitizeReply(parsed.reply);
         }
 
         // 1. 處理長期記憶寫入

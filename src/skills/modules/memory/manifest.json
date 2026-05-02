@@ -1,0 +1,13 @@
+{
+  "id": "memory",
+  "name": "Memory",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "memory",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

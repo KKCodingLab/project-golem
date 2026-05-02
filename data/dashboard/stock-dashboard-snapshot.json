@@ -51,11 +51,11 @@
     "market": "tw",
     "languagePriority": "zh-TW",
     "dateWindow": {
-      "since": "2026-04-18",
-      "until": "2026-05-02",
+      "since": "2026-04-19",
+      "until": "2026-05-03",
       "days": 14
     },
-    "query": "0056 元大高股息 股票 新聞 最新 after:2026-04-18 before:2026-05-02",
+    "query": "0056 元大高股息 股票 新聞 最新 after:2026-04-19 before:2026-05-03",
     "source": "Yahoo 股市 RSS + Yahoo Finance news + Google News RSS + DuckDuckGo HTML search",
     "sourceStatus": [
       {
@@ -79,7 +79,7 @@
         "count": 6
       }
     ],
-    "fetchedAt": "2026-05-02T13:37:40.951Z",
+    "fetchedAt": "2026-05-02T19:08:42.149Z",
     "results": [
       {
         "title": "0056躍永豐金最大單一股東 - 經濟日報",
@@ -369,6 +369,6 @@
     "count": 9
   },
   "quoteErrors": [],
-  "generatedAt": "2026-05-02T13:37:40.953Z",
-  "savedAt": "2026-05-02T13:37:41.471Z"
+  "generatedAt": "2026-05-02T19:08:42.151Z",
+  "savedAt": "2026-05-02T19:08:42.669Z"
 }

@@ -1,0 +1,13 @@
+{
+  "id": "spotify",
+  "name": "Spotify",
+  "description": "",
+  "type": "optional",
+  "enabled": true,
+  "action": "spotify",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

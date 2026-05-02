@@ -1,0 +1,13 @@
+{
+  "id": "youtube",
+  "name": "Youtube",
+  "description": "",
+  "type": "optional",
+  "enabled": true,
+  "action": "youtube",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

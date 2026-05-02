@@ -1,0 +1,13 @@
+{
+  "id": "session-search",
+  "name": "Session Search",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "session-search",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

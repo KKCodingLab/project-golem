@@ -218,7 +218,8 @@ class MCPManager extends EventEmitter {
             if (cfgEntry && client.tools.length > 0) {
                 cfgEntry.cachedTools = client.tools.map(t => ({
                     name:        t.name,
-                    description: t.description || ''
+                    description: t.description || '',
+                    inputSchema: t.inputSchema || t.schema || null
                 }));
                 this._saveConfig();
             }

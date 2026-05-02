@@ -1,0 +1,13 @@
+{
+  "id": "wiki",
+  "name": "Wiki",
+  "description": "維護 Golem 的 Markdown Wiki 知識庫，支援保存、搜尋、讀取與健康檢查。",
+  "type": "core",
+  "enabled": true,
+  "action": "wiki",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": ["wiki", "知識庫", "保存成 wiki", "搜尋 wiki", "讀取 wiki"],
+  "version": "1.0.0"
+}

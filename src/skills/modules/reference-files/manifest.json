@@ -1,0 +1,13 @@
+{
+  "id": "reference-files",
+  "name": "Reference Files",
+  "description": "讀取、列出與整理使用者提供的參考檔案，讓回覆可以依據附件內容。",
+  "type": "core",
+  "enabled": true,
+  "action": "reference-files",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": ["參考檔案", "附件", "上傳檔案", "reference files", "attached files"],
+  "version": "1.0.0"
+}

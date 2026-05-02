@@ -1,0 +1,13 @@
+{
+  "id": "delegate-task",
+  "name": "Delegate Task",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "delegate-task",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

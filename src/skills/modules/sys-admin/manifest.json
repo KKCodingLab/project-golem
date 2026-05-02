@@ -1,0 +1,13 @@
+{
+  "id": "sys-admin",
+  "name": "Sys Admin",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "sys-admin",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

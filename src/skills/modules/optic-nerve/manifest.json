@@ -1,0 +1,13 @@
+{
+  "id": "optic-nerve",
+  "name": "Optic Nerve",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "optic-nerve",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

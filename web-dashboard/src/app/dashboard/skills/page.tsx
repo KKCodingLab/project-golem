@@ -406,7 +406,7 @@ function SkillEditorDialog({
                         {mode === "create" ? "新增自訂技能" : "編輯自訂技能"}
                     </DialogTitle>
                     <DialogDescription className="text-muted-foreground text-sm">
-                        編輯 Markdown 格式的技能提示詞。將自動存為 <code>src/skills/lib/{id || '<id>'}.md</code>
+                        編輯 Markdown 格式的技能提示詞。將自動存為 <code>golem_memory/skills/{id || '<id>'}/skill.md</code>
                     </DialogDescription>
                 </DialogHeader>
 

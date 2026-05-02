@@ -1,6 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs').promises;
 const path = require('path');
+const SkillPackageRegistry = require('./SkillPackageRegistry');
 
 class SkillIndexManager {
     constructor(userDataDir) {
@@ -63,7 +64,12 @@ class SkillIndexManager {
         console.log(`📡 [SkillIndex][${path.basename(path.dirname(this.dbPath))}] 開始同步技能說明書... (目標數量: ${effectiveIds.size})`);
 
         try {
-            const files = await fs.readdir(this.libPath);
+            let files = [];
+            try {
+                files = await fs.readdir(this.libPath);
+            } catch (e) {
+                if (e && e.code !== 'ENOENT') throw e;
+            }
             const mdFiles = files.filter(f => f.endsWith('.md'));
 
             for (const file of mdFiles) {
@@ -76,10 +82,19 @@ class SkillIndexManager {
                     await this.removeSkill(skillId);
                 }
             }
-            console.log(`🏁 [SkillIndex][${path.basename(path.dirname(this.dbPath))}] 同步完成。`);
         } catch (e) {
             console.error('❌ [SkillIndex] 同步失敗:', e.message);
         }
+
+        const packages = SkillPackageRegistry.listSkillPackages({ userDataDir: path.dirname(this.dbPath) });
+        for (const pkg of packages) {
+            if (pkg.enabled) {
+                await this.addSkillPackage(pkg);
+            } else {
+                await this.removeSkill(pkg.id);
+            }
+        }
+        console.log(`🏁 [SkillIndex][${path.basename(path.dirname(this.dbPath))}] 同步完成。`);
     }
 
     /**
@@ -114,8 +129,34 @@ class SkillIndexManager {
                 console.log(`✅ [SkillIndex] 已加入/更新 (已去除標籤): ${id}`);
             }
         } catch (e) {
+            const pkg = SkillPackageRegistry.listSkillPackages({ userDataDir: path.dirname(this.dbPath) })
+                .find(item => item.id === id || item.action === id);
+            if (pkg) {
+                await this.addSkillPackage(pkg);
+                return;
+            }
             console.warn(`⚠️ [SkillIndex] 無法載入技能檔案 ${id}:`, e.message);
         }
+    }
+
+    async addSkillPackage(pkg) {
+        await this.init();
+        if (!pkg || !pkg.id) return;
+        const lastModified = SkillPackageRegistry.getPackageLastModified(pkg);
+        const needsUpdate = await this._checkNeedsUpdate(pkg.id, lastModified);
+        if (!needsUpdate) return;
+
+        const content = SkillPackageRegistry.buildPromptContent(pkg);
+        await this._upsertSkill({
+            id: pkg.id,
+            name: pkg.name || pkg.id,
+            description: pkg.description || '',
+            content,
+            path: pkg.dir || '',
+            category: pkg.type || 'user_generated',
+            last_modified: lastModified
+        });
+        console.log(`✅ [SkillIndex] 已加入/更新 package skill: ${pkg.id}`);
     }
 
     /**

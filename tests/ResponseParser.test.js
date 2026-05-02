@@ -97,6 +97,24 @@ describe('ResponseParser', () => {
             expect(result.reply).toBe('Just a plain text response.');
         });
 
+        test('strips internal envelope tags from replies', () => {
+            const raw = '[[BEGIN:pu7l]][GOLEM_REPLY]完成了\n[[END:pu7l]]';
+            const result = ResponseParser.parse(raw);
+            expect(result.reply).toBe('完成了');
+        });
+
+        test('strips malformed trailing envelope tags from replies', () => {
+            const raw = '[GOLEM_REPLY]完成了\n[END:pu7l]]';
+            const result = ResponseParser.parse(raw);
+            expect(result.reply).toBe('完成了');
+        });
+
+        test('strips envelope tags from fallback replies', () => {
+            const raw = '純文字回覆\n[[END:abcd]]';
+            const result = ResponseParser.parse(raw);
+            expect(result.reply).toBe('純文字回覆');
+        });
+
         test('handles empty text with default error message', () => {
             const raw = 'Assessing My Capabilities Answer now Gemini said';
             const result = ResponseParser.parse(raw);

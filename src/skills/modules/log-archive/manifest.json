@@ -1,0 +1,13 @@
+{
+  "id": "log-archive",
+  "name": "Log Archive",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "log-archive",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

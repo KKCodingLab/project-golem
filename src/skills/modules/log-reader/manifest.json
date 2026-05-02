@@ -1,0 +1,13 @@
+{
+  "id": "log-reader",
+  "name": "Log Reader",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "log-reader",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

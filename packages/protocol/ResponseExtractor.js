@@ -153,6 +153,17 @@ class ResponseExtractor {
         return rawText
             .replace(startTag, '')
             .replace(endTag, '')
+            .replace(/\[{1,2}\s*(?:BEGIN|END)\s*:[^\]\n\r]+?\]{1,2}/gi, '')
+            .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\s*END\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\[\s*BEGIN\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\[\s*END\s*:[^\]\n\r]+?\]/gi, '')
+            .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
+            .replace(/\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
             .replace(/\[SYSTEM: Please WRAP.*?\]/, '')
             .trim();
     }

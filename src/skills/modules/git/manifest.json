@@ -1,0 +1,13 @@
+{
+  "id": "git",
+  "name": "Git",
+  "description": "",
+  "type": "optional",
+  "enabled": true,
+  "action": "git",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

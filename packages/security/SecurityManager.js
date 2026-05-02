@@ -15,7 +15,7 @@ class SecurityManager {
         this.patterns = {
             L0: [
                 /^ls(\s|$)/, /^cat(\s|$)/, /^echo(\s|$)/, /^pwd(\s|$)/, /^whoami(\s|$)/,
-                /^node\s+src\/skills\/.*\.js/, /^grep(\s|$)/, /^find(\s|$)/, /^date(\s|$)/, /^tail(\s|$)/
+                /^node\s+src\/skills\/.*\.js/, /^node\s+golem_memory\/skills\/.*\/index\.js/, /^grep(\s|$)/, /^find(\s|$)/, /^date(\s|$)/, /^tail(\s|$)/
             ],
             L1: [
                 /^git(\s+)(status|commit|add|diff|log)(\s|$)/,

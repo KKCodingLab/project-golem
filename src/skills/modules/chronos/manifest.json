@@ -1,0 +1,13 @@
+{
+  "id": "chronos",
+  "name": "Chronos",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "chronos",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}

@@ -1,10 +1,11 @@
 // File: lib/skill-architect.js
 const fs = require('fs');
 const path = require('path');
+const SkillPackageRegistry = require('./SkillPackageRegistry');
 
 class SkillArchitect {
     constructor(skillsDir) {
-        this.skillsDir = skillsDir || path.join(process.cwd(), 'src', 'skills', 'user');
+        this.skillsDir = skillsDir || null;
     }
 
     /**
@@ -14,11 +15,6 @@ class SkillArchitect {
      * @param {Array} existingSkills - 現有技能列表
      */
     async designSkill(brain, intent, existingSkills = []) {
-        // 確保目錄在實際需要時才建立
-        if (!fs.existsSync(this.skillsDir)) {
-            fs.mkdirSync(this.skillsDir, { recursive: true });
-        }
-
         console.log(`🏗️ Architect (Web): Designing skill for "${intent}"...`);
 
         // 1. 建構 System Prompt
@@ -177,20 +173,60 @@ class SkillArchitect {
                 skillData.filename = `learned-skill-${Date.now()}.js`;
             }
 
-            const filePath = path.join(this.skillsDir, skillData.filename);
+            const skillId = SkillPackageRegistry.safeSkillId(
+                path.basename(skillData.filename, '.js') || skillData.name,
+                `learned-skill-${Date.now()}`
+            );
+            const packageRoot = this.skillsDir || SkillPackageRegistry.getUserSkillPackageDir(brain && brain.userDataDir);
+            if (!fs.existsSync(packageRoot)) {
+                fs.mkdirSync(packageRoot, { recursive: true });
+            }
+            let packageDir = path.join(packageRoot, skillId);
 
             // 防止意外覆蓋
-            if (fs.existsSync(filePath)) {
-                skillData.filename = skillData.filename.replace('.js', `-${Date.now()}.js`);
+            if (fs.existsSync(packageDir)) {
+                packageDir = path.join(packageRoot, `${skillId}-${Date.now()}`);
             }
 
-            const finalPath = path.join(this.skillsDir, skillData.filename);
+            fs.mkdirSync(packageDir, { recursive: true });
+            const finalPath = path.join(packageDir, 'index.js');
+            const promptPath = path.join(packageDir, 'skill.md');
+            const manifestPath = path.join(packageDir, 'manifest.json');
+            const runtimeDescription = skillData.description || '由 /learn 動態生成的使用者技能';
+
             fs.writeFileSync(finalPath, skillData.code);
+            fs.writeFileSync(promptPath, [
+                `# ${skillData.name || skillId}`,
+                '',
+                runtimeDescription,
+                '',
+                '## Runtime Action',
+                `- action: \`${skillId}\``,
+                '',
+                '## Usage Guidance',
+                `當使用者需求符合「${intent}」時，優先使用此技能。`
+            ].join('\n'), 'utf8');
+            fs.writeFileSync(manifestPath, JSON.stringify({
+                id: path.basename(packageDir).toLowerCase(),
+                name: skillData.name || skillId,
+                description: runtimeDescription,
+                type: 'user_generated',
+                enabled: true,
+                action: path.basename(packageDir).toLowerCase(),
+                entry: 'index.js',
+                prompt: 'skill.md',
+                toolsets: ['assistant'],
+                triggers: [intent],
+                createdBy: 'skill-architect',
+                createdAt: new Date().toISOString(),
+                version: '1.0.0'
+            }, null, 2) + '\n', 'utf8');
 
             return {
                 success: true,
                 path: finalPath,
-                id: path.basename(skillData.filename, '.js').toLowerCase(),
+                packagePath: packageDir,
+                id: path.basename(packageDir).toLowerCase(),
                 name: skillData.name,
                 preview: skillData.description,
                 code: skillData.code

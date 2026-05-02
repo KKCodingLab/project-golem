@@ -1,0 +1,13 @@
+{
+  "id": "actor",
+  "name": "Actor",
+  "description": "",
+  "type": "core",
+  "enabled": true,
+  "action": "actor",
+  "entry": null,
+  "prompt": "skill.md",
+  "toolsets": [],
+  "triggers": [],
+  "version": "1.0.0"
+}
