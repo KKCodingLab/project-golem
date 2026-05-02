@@ -16,6 +16,7 @@ import {
     BarChart3,
     BrainCircuit,
     Check,
+    Coffee,
     Info,
     LineChart,
     Loader2,
@@ -183,8 +184,78 @@ type StockDashboardSnapshot = {
 };
 
 const WATCHLIST_STORAGE_KEY = "golem-stock-watchlist-v1";
+const SUPPORT_PROMPT_STORAGE_KEY = "golem-stock-support-prompt-snoozed-at-v1";
 const DEFAULT_WATCHLIST = ["2330.TW", "0050.TW", "2454.TW", "AAPL", "NVDA", "TSM"];
 const AUTO_REFRESH_MS = 60 * 1000;
+const SUPPORT_PROMPT_INTERVAL_MS = 150 * 60 * 1000;
+const SUPPORT_PROMPT_INITIAL_DELAY_MS = 45 * 1000;
+const SUPPORT_URL = "https://buymeacoffee.com/arvincreator/e/534156";
+const SUPPORT_COPY_VARIANTS = [
+    {
+        zhTitle: "還在努力盯盤嗎？",
+        zhBody: "記得喝杯咖啡提神，順便也給作者帶上一杯喔！",
+        zhAction: "請作者喝咖啡",
+        enTitle: "Still watching the tape?",
+        enBody: "Grab a coffee to stay sharp, and maybe bring one for the author too.",
+        enAction: "Buy a coffee",
+    },
+    {
+        zhTitle: "作者的佛心打動不了你的慈悲嗎？",
+        zhBody: "這個看板都努力幫你盯行情了，添點油香給作者，讓功能繼續長大。",
+        zhAction: "添點油香",
+        enTitle: "Did the author's generosity miss your soft spot?",
+        enBody: "This board is keeping watch with you. A tiny tip keeps the features growing.",
+        enAction: "Send a tip",
+    },
+    {
+        zhTitle: "這裡有一位需要咖啡的開發者",
+        zhBody: "作者不眠不休打磨這個程式，5 美金剛好能補一杯星巴克能量。",
+        zhAction: "補一杯星巴克",
+        enTitle: "Developer fuel is running low",
+        enBody: "A few dollars can turn into one very useful cup of coffee and a few more fixes.",
+        enAction: "Fuel development",
+    },
+    {
+        zhTitle: "K 線會震盪，作者也會餓",
+        zhBody: "如果這頁幫你少看錯一根線，請用一杯咖啡讓作者回血。",
+        zhAction: "幫作者回血",
+        enTitle: "Candles move. Developers fade.",
+        enBody: "If this page saved you from one bad read, coffee is a noble exchange.",
+        enAction: "Restore HP",
+    },
+    {
+        zhTitle: "今天的行情很刺激嗎？",
+        zhBody: "你的心跳交給市場，作者的咖啡因交給你。小額贊助一下，彼此都穩。",
+        zhAction: "穩住作者",
+        enTitle: "Markets feeling spicy today?",
+        enBody: "Let the market handle your pulse. Let your coffee support handle the author.",
+        enAction: "Keep it steady",
+    },
+    {
+        zhTitle: "這個按鈕不是廣告，是補給站",
+        zhBody: "一點點支持，就能讓作者繼續修 bug、加功能、跟 Yahoo API 交涉人生。",
+        zhAction: "送補給",
+        enTitle: "This button is a supply station",
+        enBody: "A little support helps with bugs, features, and the long conversation with market APIs.",
+        enAction: "Send supplies",
+    },
+    {
+        zhTitle: "你負責看盤，我負責提醒",
+        zhBody: "作者負責把工具變好。這個分工很美，只差一杯咖啡收尾。",
+        zhAction: "完成分工",
+        enTitle: "You watch. I remind.",
+        enBody: "The author keeps improving the tool. A coffee would complete the workflow.",
+        enAction: "Complete the loop",
+    },
+    {
+        zhTitle: "如果這頁有讓你嘴角上揚",
+        zhBody: "那就讓作者的咖啡杯也上揚一下。小額贊助，快樂互相流動。",
+        zhAction: "讓咖啡杯上揚",
+        enTitle: "If this page made you smile",
+        enBody: "Let the author's coffee cup rise too. Tiny support, good vibes.",
+        enAction: "Raise the cup",
+    },
+];
 const RANGE_MAP: Record<RangeKey, { range: string; interval: string }> = {
     "1D": { range: "1d", interval: "5m" },
     "1M": { range: "1mo", interval: "1d" },
@@ -437,6 +508,8 @@ export default function StockAnalysisPage() {
     const [sentSnapshot, setSentSnapshot] = useState(false);
     const [lastUpdatedAt, setLastUpdatedAt] = useState("");
     const [isMounted, setIsMounted] = useState(false);
+    const [showSupportPrompt, setShowSupportPrompt] = useState(false);
+    const [supportCopyIndex, setSupportCopyIndex] = useState(0);
     const lastInteractionRefreshRef = useRef(0);
 
     useEffect(() => {
@@ -446,6 +519,22 @@ export default function StockAnalysisPage() {
     useEffect(() => {
         localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
     }, [watchlist]);
+
+    useEffect(() => {
+        if (!isMounted) return;
+        if (showSupportPrompt) return;
+        const readSnoozedAt = () => Number(localStorage.getItem(SUPPORT_PROMPT_STORAGE_KEY) || 0);
+        const scheduleDelay = () => {
+            const elapsed = Date.now() - readSnoozedAt();
+            if (elapsed >= SUPPORT_PROMPT_INTERVAL_MS) return SUPPORT_PROMPT_INITIAL_DELAY_MS;
+            return SUPPORT_PROMPT_INTERVAL_MS - elapsed;
+        };
+        const timer = window.setTimeout(() => {
+            setSupportCopyIndex((prev) => (prev + 1) % SUPPORT_COPY_VARIANTS.length);
+            setShowSupportPrompt(true);
+        }, scheduleDelay());
+        return () => window.clearTimeout(timer);
+    }, [isMounted, showSupportPrompt]);
 
     const loadQuotes = useCallback(async () => {
         if (!watchlist.length) return;
@@ -715,8 +804,49 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
         }
     };
 
+    const snoozeSupportPrompt = () => {
+        localStorage.setItem(SUPPORT_PROMPT_STORAGE_KEY, String(Date.now()));
+        setShowSupportPrompt(false);
+    };
+    const supportCopy = SUPPORT_COPY_VARIANTS[supportCopyIndex % SUPPORT_COPY_VARIANTS.length];
+
     return (
         <div className="min-h-full bg-background text-foreground" onPointerDown={refreshOnInteraction}>
+            {showSupportPrompt && (
+                <div className="fixed right-4 top-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-lg border border-amber-300/70 bg-card p-4 shadow-2xl shadow-amber-500/15 dark:border-amber-400/35">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-lg shadow-amber-500/25">
+                            <Coffee className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 space-y-3">
+                            <div>
+                                <div className="text-sm font-semibold text-foreground">
+                                    {isEnglish ? supportCopy.enTitle : supportCopy.zhTitle}
+                                </div>
+                                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                                    {isEnglish ? supportCopy.enBody : supportCopy.zhBody}
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                <Button className="bg-amber-400 text-amber-950 shadow-lg shadow-amber-500/25 hover:bg-amber-300" asChild>
+                                    <a
+                                        href={SUPPORT_URL}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        onClick={snoozeSupportPrompt}
+                                    >
+                                        <Coffee className="mr-2 h-4 w-4" />
+                                        {isEnglish ? supportCopy.enAction : supportCopy.zhAction}
+                                    </a>
+                                </Button>
+                                <Button variant="ghost" onClick={snoozeSupportPrompt}>
+                                    {isEnglish ? "Not this time" : "狠心不贊助"}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 p-4 sm:p-5">
                 <section className="flex flex-col gap-3 border-b border-border/70 pb-4 lg:flex-row lg:items-end lg:justify-between">
                     <div className="space-y-2">
@@ -758,6 +888,20 @@ ${JSON.stringify(snapshotForGolem, null, 2)}`;
                         <Button variant="secondary" onClick={refreshDashboard} disabled={isLoadingQuotes || isLoadingHistory}>
                             {isLoadingQuotes || isLoadingHistory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
                             {isEnglish ? "Refresh" : "刷新"}
+                        </Button>
+                        <Button
+                            className="border-amber-300 bg-amber-400 text-amber-950 shadow-lg shadow-amber-500/25 ring-2 ring-amber-300/40 transition-all hover:bg-amber-300 hover:text-amber-950 dark:border-amber-300/70 dark:bg-amber-400 dark:text-amber-950 dark:hover:bg-amber-300 motion-safe:animate-pulse"
+                            asChild
+                        >
+                            <a
+                                href={SUPPORT_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={snoozeSupportPrompt}
+                            >
+                                <Coffee className="mr-2 h-4 w-4" />
+                                {isEnglish ? "Support" : "小額贊助"}
+                            </a>
                         </Button>
                     </div>
                 </section>
