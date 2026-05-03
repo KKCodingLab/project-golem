@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Engine-Node.js%2020-green?style=for-the-badge&logo=nodedotjs" alt="Engine">
     <img src="https://img.shields.io/badge/Brain-Gemini%20Web%20%7C%20Ollama-orange?style=for-the-badge&logo=google" alt="Brain">
     <img src="https://img.shields.io/badge/Platform-Telegram%20%7C%20Discord-blue?style=for-the-badge" alt="Platform">
-    <img src="https://img.shields.io/badge/License-MIT-red?style=for-the-badge" alt="License">
+    <img src="https://img.shields.io/badge/License-Source--Available%20NC-red?style=for-the-badge" alt="License">
   </p>
 
   <p>
@@ -266,6 +266,18 @@ To keep this page concise, more in-depth technical details have been moved to de
 | [🛠️ Developer Implementation Guide](開發者實作指南.md) | How to implement new Skills and Golem Protocol specifications |
 | [🎮 Command Reference List](golem指令說明一覽表.md) | Quick reference for Telegram / Discord commands |
 | [🔑 Getting Robot Tokens](如何獲取TG或DC的Token及開啟權限.md) | How to set up your external communication platforms |
+
+---
+
+## License
+
+Project Golem is released under the [Project Golem Source-Available Non-Commercial License](../LICENSE).
+
+- Personal use, learning, research, evaluation, and non-commercial community contributions are allowed.
+- Commercial use, company/team production use, SaaS, hosted services, client deployment, consulting deliverables, commercial integrations, resale, or profit-oriented modified versions require prior written permission from Arvincreator.
+- For commercial licensing and partnership requests, see [COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md).
+
+Note: older versions or copies that were previously obtained under the MIT License remain governed by the license terms that applied to those copies at the time they were obtained. New versions and new repository content after this license change are governed by the current non-commercial license.
 
 ---
 

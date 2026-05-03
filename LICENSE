@@ -1,21 +1,76 @@
-MIT License
+Project Golem Source-Available Non-Commercial License
+Version 1.0
 
 Copyright (c) 2026 Arvincreator
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license applies to Project Golem and all source code, documentation,
+assets, build scripts, dashboard code, runtime code, skills, and related files
+in this repository, unless a file states a different license.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Grant of Non-Commercial Rights
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+You may use, copy, study, modify, and share this software for non-commercial
+purposes, including personal use, education, research, evaluation, internal
+experimentation, and community contribution.
+
+You may create and publish non-commercial forks or modifications, provided that
+you keep this license notice and clearly state that your version is modified.
+
+2. Commercial Use Requires Permission
+
+You may not use this software for any commercial purpose without prior written
+permission from Arvincreator.
+
+Commercial use includes, but is not limited to:
+
+- selling, licensing, renting, or sublicensing this software or a modified version;
+- offering this software as a hosted service, SaaS, managed service, agency service,
+  consulting deliverable, or paid deployment;
+- embedding this software or substantial parts of it into a commercial product,
+  paid tool, internal business platform, or customer-facing service;
+- using this software to provide paid automation, AI agent, dashboard, integration,
+  or operations services to others;
+- removing attribution and redistributing a modified version for profit;
+- using this software in a company, startup, agency, or organization for production
+  business operations unless a commercial license has been granted.
+
+For commercial licensing, contact the copyright holder before use. See
+COMMERCIAL-LICENSE.md for the intended commercial licensing path.
+
+3. No Trademark Rights
+
+This license does not grant permission to use the names "Project Golem",
+"Golem", "Arvincreator", logos, branding, or related marks in a way that implies
+endorsement, official partnership, or ownership.
+
+4. Contributions
+
+Unless otherwise agreed in writing, contributions submitted to this repository
+are licensed under this same license. By submitting a contribution, you represent
+that you have the right to license it under these terms.
+
+5. Third-Party Components
+
+Third-party dependencies, packages, models, APIs, browser services, and external
+tools remain under their own licenses and terms. This license does not override
+their licenses.
+
+6. No Warranty
+
+This software is provided "as is", without warranty of any kind, express or
+implied, including but not limited to warranties of merchantability, fitness for
+a particular purpose, and non-infringement.
+
+7. Limitation of Liability
+
+In no event shall the copyright holder or contributors be liable for any claim,
+damages, data loss, business interruption, security incident, or other liability
+arising from the use of this software.
+
+8. Prior MIT Releases
+
+Versions or copies that were previously obtained under the MIT License remain
+governed by the license terms that applied to those copies at the time they were
+obtained. New versions and new repository content published after this license
+change are governed by this Source-Available Non-Commercial License unless
+explicitly stated otherwise.

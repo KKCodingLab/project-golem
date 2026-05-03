@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/Node.js-20--22-green?style=for-the-badge&logo=nodedotjs" alt="Node.js">
     <img src="https://img.shields.io/badge/Backend-Gemini%20Web%20%7C%20Ollama%20%7C%20LM%20Studio-orange?style=for-the-badge" alt="Backends">
     <img src="https://img.shields.io/badge/Dashboard-Next.js%2016-black?style=for-the-badge&logo=nextdotjs" alt="Dashboard">
-    <img src="https://img.shields.io/badge/License-MIT-red?style=for-the-badge" alt="License">
+    <img src="https://img.shields.io/badge/License-Source--Available%20NC-red?style=for-the-badge" alt="License">
   </p>
 
   <p>
@@ -266,7 +266,13 @@ npm test
 
 ## 授權
 
-本專案採用 [MIT License](LICENSE)。
+Project Golem 採用 [Source-Available Non-Commercial License](LICENSE)。
+
+- 個人使用、學習、研究、評估與非商業社群貢獻：允許。
+- 商業使用、公司/團隊生產環境、SaaS、代部署、顧問交付、商業整合、改版販售或盈利性服務：必須先取得 Arvincreator 的書面授權。
+- 商業授權與合作請參考 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
+
+注意：本專案過去已用 MIT 發佈的舊版本或舊副本，仍依取得當時的授權條款處理；本次授權變更後的新版本與新增內容適用目前的非商業授權。
 
 ## 社群與支持
 
