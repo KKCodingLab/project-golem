@@ -257,6 +257,8 @@ const SUPPORT_COPY_VARIANTS = [
         enAction: "Raise the cup",
     },
 ];
+const TAIWAN_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}$/;
+const TAIWAN_YAHOO_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}\.(TW|TWO)$/;
 const RANGE_MAP: Record<RangeKey, { range: string; interval: string }> = {
     "1D": { range: "1d", interval: "5m" },
     "1M": { range: "1mo", interval: "1d" },
@@ -266,14 +268,21 @@ const RANGE_MAP: Record<RangeKey, { range: string; interval: string }> = {
 };
 
 function normalizeSymbol(input: string) {
-    const value = String(input || "").trim().toUpperCase();
+    const value = String(input || "").trim().toUpperCase().replace(/\s+/g, "");
     if (!value) return "";
-    if (/^\d{4,6}$/.test(value)) return `${value}.TW`;
-    return value.replace(/\s+/g, "");
+    if (TAIWAN_SYMBOL_RE.test(value)) return `${value}.TW`;
+    if (TAIWAN_YAHOO_SYMBOL_RE.test(value)) return value;
+    return value;
 }
 
 function displaySymbol(symbol: string) {
     return String(symbol || "").replace(/\.(TW|TWO)$/i, "");
+}
+
+function pickSupportCopyIndex(currentIndex = -1) {
+    if (SUPPORT_COPY_VARIANTS.length <= 1) return 0;
+    const nextIndex = Math.floor(Math.random() * SUPPORT_COPY_VARIANTS.length);
+    return nextIndex === currentIndex ? (nextIndex + 1) % SUPPORT_COPY_VARIANTS.length : nextIndex;
 }
 
 function readStoredWatchlist() {
@@ -531,7 +540,7 @@ export default function StockAnalysisPage() {
             return SUPPORT_PROMPT_INTERVAL_MS - elapsed;
         };
         const timer = window.setTimeout(() => {
-            setSupportCopyIndex((prev) => (prev + 1) % SUPPORT_COPY_VARIANTS.length);
+            setSupportCopyIndex((prev) => pickSupportCopyIndex(prev));
             setShowSupportPrompt(true);
         }, scheduleDelay());
         return () => window.clearTimeout(timer);
@@ -786,11 +795,16 @@ export default function StockAnalysisPage() {
                     isEnglish ? `Live refresh failed: ${message}` : `即時刷新失敗：${message}`
                 );
             }
-            const message = `${isEnglish ? "Analyze the current live stock dashboard snapshot." : "請分析目前即時股市行情看板快照。"}
-
-${isEnglish ? "Use the supplied structured dashboard data only. Mention data freshness and do not provide guaranteed financial advice." : "請以提供的結構化看板資料為準，說明資料新鮮度，且不要做保證式投資建議。"}
-
-${JSON.stringify(snapshotForGolem, null, 2)}`;
+            const symbolsForPrompt = Array.from(new Set([selectedSymbol, ...watchlist].map(normalizeSymbol).filter(Boolean)));
+            const message = [
+                `/stockboard ${symbolsForPrompt.join(" ")}`,
+                isEnglish
+                    ? "Analyze the current Dashboard stock snapshot. The dashboard has just synchronized the latest server-side structured snapshot; use that complete snapshot as the primary source, mention freshness, and avoid guaranteed financial advice."
+                    : "請分析目前 Dashboard 股市看板。Dashboard 已先同步最新的 server-side 結構化快照；請以完整快照為主要資料來源，說明資料新鮮度，且不要做保證式投資建議。",
+                snapshotForGolem?.generatedAt
+                    ? `${isEnglish ? "Snapshot generated at" : "快照產生時間"}: ${snapshotForGolem.generatedAt}`
+                    : "",
+            ].filter(Boolean).join("\n");
             await apiPost(apiUrl("/api/chat"), { golemId: activeGolem, message });
             setSentSnapshot(true);
             toast.success(

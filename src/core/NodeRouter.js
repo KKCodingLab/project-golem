@@ -30,11 +30,12 @@ const STOCK_NAME_SYMBOLS = {
     '國泰金': '2882.TW',
     '中信金': '2891.TW',
 };
+const TAIWAN_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}$/;
 
 function normalizeStockSymbol(input) {
     const value = String(input || '').trim().toUpperCase();
     if (!value) return '';
-    if (/^\d{4,6}$/.test(value)) return `${value}.TW`;
+    if (TAIWAN_SYMBOL_RE.test(value)) return `${value}.TW`;
     return value.replace(/[^A-Z0-9.^=-]/g, '').slice(0, 24);
 }
 
@@ -44,7 +45,7 @@ function extractStockSymbolsFromText(text) {
     Object.entries(STOCK_NAME_SYMBOLS).forEach(([name, symbol]) => {
         if (lower.includes(name.toLowerCase())) found.add(symbol);
     });
-    const symbolMatches = String(text || '').match(/\b[A-Z]{1,5}\b|\b\d{4,6}(?:\.(?:TW|TWO))?\b/gi) || [];
+    const symbolMatches = String(text || '').match(/\b[A-Z]{1,5}\b|\b\d{4,6}[A-Z]{0,3}(?:\.(?:TW|TWO))?\b/gi) || [];
     symbolMatches
         .map(normalizeStockSymbol)
         .filter(Boolean)

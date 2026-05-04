@@ -32,6 +32,8 @@ const TW_FALLBACK_NAMES = {
     '2882.TW': { name: '國泰金', sector: '金融' },
     '2891.TW': { name: '中信金', sector: '金融' },
 };
+const TAIWAN_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}$/;
+const TAIWAN_YAHOO_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}\.(TW|TWO)$/;
 
 function createHttpError(statusCode, message) {
     const error = new Error(message);
@@ -107,13 +109,13 @@ function normalizeSymbol(input) {
     const raw = String(input || '').trim().toUpperCase();
     if (!raw) return '';
     const cleaned = raw.replace(/\s+/g, '');
-    if (/^\d{4,6}$/.test(cleaned)) return `${cleaned}.TW`;
-    if (/^\d{4,6}\.(TW|TWO)$/.test(cleaned)) return cleaned;
+    if (TAIWAN_SYMBOL_RE.test(cleaned)) return `${cleaned}.TW`;
+    if (TAIWAN_YAHOO_SYMBOL_RE.test(cleaned)) return cleaned;
     return cleaned.replace(/[^A-Z0-9.^=-]/g, '').slice(0, 24);
 }
 
 function isTaiwanSymbol(symbol) {
-    return /\.(TW|TWO)$/.test(symbol) || /^\d{4,6}$/.test(symbol);
+    return TAIWAN_YAHOO_SYMBOL_RE.test(symbol) || TAIWAN_SYMBOL_RE.test(symbol);
 }
 
 function getDisplaySymbol(symbol) {
@@ -524,17 +526,22 @@ module.exports = function registerStockRoutes() {
             const directoryResults = asArray(directoryResultsRaw);
             const yahooResults = asArray(yahooResultsRaw);
             const taiwanFallback = asArray(taiwanFallbackRaw);
+            const directoryMatch = directoryResults.find((item) =>
+                item.yahooSymbol === normalizedSymbol ||
+                item.symbol === getDisplaySymbol(normalizedSymbol)
+            );
+            const directTaiwanSymbol = directoryMatch?.yahooSymbol || normalizedSymbol;
             const directTaiwan = isTaiwanSymbol(normalizedSymbol)
                 ? [{
-                    symbol: getDisplaySymbol(normalizedSymbol),
-                    yahooSymbol: normalizedSymbol,
-                    name: directoryResults.find((item) => item.yahooSymbol === normalizedSymbol)?.name ||
-                        TW_FALLBACK_NAMES[normalizedSymbol]?.name ||
-                        getDisplaySymbol(normalizedSymbol),
+                    symbol: getDisplaySymbol(directTaiwanSymbol),
+                    yahooSymbol: directTaiwanSymbol,
+                    name: directoryMatch?.name ||
+                        TW_FALLBACK_NAMES[directTaiwanSymbol]?.name ||
+                        getDisplaySymbol(directTaiwanSymbol),
                     market: 'tw',
-                    exchange: normalizedSymbol.endsWith('.TWO') ? 'TPEX' : 'TWSE',
-                    type: directoryResults.find((item) => item.yahooSymbol === normalizedSymbol)?.type || 'EQUITY',
-                    dataSource: directoryResults.find((item) => item.yahooSymbol === normalizedSymbol)?.dataSource || 'Taiwan symbol normalizer',
+                    exchange: directTaiwanSymbol.endsWith('.TWO') ? 'TPEX' : 'TWSE',
+                    type: directoryMatch?.type || 'EQUITY',
+                    dataSource: directoryMatch?.dataSource || 'Taiwan symbol normalizer',
                 }]
                 : [];
             const unique = new Map();

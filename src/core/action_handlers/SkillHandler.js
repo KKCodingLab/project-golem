@@ -126,7 +126,7 @@ class SkillHandler {
                         ? result.slice(0, MAX_RESULT_LENGTH) + '\n...(已截斷)'
                         : result;
                     await ctx.reply(`✅ 技能回報: ${displayResult}`);
-                    await sendFeedback(`[Skill Result - ${dynamicSkill.name}]\n${displayResult}`);
+                    await sendFeedback(`[Skill Result - ${dynamicSkill.name}]\n${result}`);
                 } else {
                     await sendFeedback(`[Skill Result - ${dynamicSkill.name}]\n(無回傳值)`);
                 }

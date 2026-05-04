@@ -9,13 +9,15 @@ const SYMBOL_ALIASES = {
     蘋果: 'AAPL',
     特斯拉: 'TSLA',
 };
+const TAIWAN_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}$/;
+const TAIWAN_YAHOO_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}\.(TW|TWO)$/;
 
 function normalizeSymbol(input) {
     const raw = String(input || '').trim().toUpperCase();
     if (!raw) return '';
     const cleaned = raw.replace(/\s+/g, '');
-    if (/^\d{4,6}$/.test(cleaned)) return `${cleaned}.TW`;
-    if (/^\d{4,6}\.(TW|TWO)$/.test(cleaned)) return cleaned;
+    if (TAIWAN_SYMBOL_RE.test(cleaned)) return `${cleaned}.TW`;
+    if (TAIWAN_YAHOO_SYMBOL_RE.test(cleaned)) return cleaned;
     return cleaned.replace(/[^A-Z0-9.^=-]/g, '').slice(0, 24);
 }
 
@@ -27,7 +29,7 @@ function extractSymbolsFromText(text) {
         if (source.includes(label)) symbols.push(symbol);
     }
 
-    const tokenMatches = source.match(/\b(?:[A-Za-z]{1,5}|\d{4,6})(?:\.(?:TW|TWO))?\b/g) || [];
+    const tokenMatches = source.match(/\b(?:[A-Za-z]{1,5}|\d{4,6}[A-Za-z]{0,3})(?:\.(?:TW|TWO))?\b/g) || [];
     for (const token of tokenMatches) {
         const symbol = normalizeSymbol(token);
         if (symbol && !['STOCK', 'DASHBOARD', 'MARKET'].includes(symbol)) symbols.push(symbol);

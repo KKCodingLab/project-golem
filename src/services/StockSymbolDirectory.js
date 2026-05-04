@@ -25,6 +25,8 @@ const SEED_SYMBOLS = [
     { symbol: 'TSM', yahooSymbol: 'TSM', name: 'Taiwan Semiconductor Manufacturing Company Limited', market: 'us', exchange: 'NYSE', type: 'ADR', sector: '', source: 'Seed fallback' },
 ];
 
+const TAIWAN_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}$/;
+
 const TAIWAN_INDUSTRY_NAMES = {
     '01': '水泥工業',
     '02': '食品工業',
@@ -86,7 +88,7 @@ function normalizeSymbol(input) {
 
 function inferTaiwanYahooSymbol(symbol, exchange) {
     const safeSymbol = normalizeSymbol(symbol);
-    if (!/^\d{4,6}$/.test(safeSymbol)) return safeSymbol;
+    if (!TAIWAN_SYMBOL_RE.test(safeSymbol)) return safeSymbol;
     return exchange === 'TPEX' ? `${safeSymbol}.TWO` : `${safeSymbol}.TW`;
 }
 

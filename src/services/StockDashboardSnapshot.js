@@ -24,6 +24,8 @@ const RANGE_MAP = {
     '6M': { range: '6mo', interval: '1d' },
     '1Y': { range: '1y', interval: '1d' },
 };
+const TAIWAN_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}$/;
+const TAIWAN_YAHOO_SYMBOL_RE = /^\d{4,6}[A-Z]{0,3}\.(TW|TWO)$/;
 
 const TW_FALLBACK_NAMES = {
     '2330.TW': { name: '台積電', sector: '半導體' },
@@ -119,8 +121,8 @@ function normalizeSymbol(input) {
     const raw = String(input || '').trim().toUpperCase();
     if (!raw) return '';
     const cleaned = raw.replace(/\s+/g, '');
-    if (/^\d{4,6}$/.test(cleaned)) return `${cleaned}.TW`;
-    if (/^\d{4,6}\.(TW|TWO)$/.test(cleaned)) return cleaned;
+    if (TAIWAN_SYMBOL_RE.test(cleaned)) return `${cleaned}.TW`;
+    if (TAIWAN_YAHOO_SYMBOL_RE.test(cleaned)) return cleaned;
     return cleaned.replace(/[^A-Z0-9.^=-]/g, '').slice(0, 24);
 }
 
