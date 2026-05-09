@@ -6,7 +6,7 @@
   "selected": {
     "symbol": "2892",
     "yahooSymbol": "2892.TW",
-    "name": "First Financial Holding Co., Ltd.",
+    "name": "第一金",
     "market": "tw",
     "currency": "TWD",
     "exchangeName": "TAI",
@@ -23,7 +23,7 @@
     "volume": 39624454,
     "turnover": 1168921393,
     "marketCap": null,
-    "sector": "台股",
+    "sector": "金融保險",
     "dataSource": "Yahoo Finance",
     "lastUpdatedAt": "2026-05-08T05:30:22.000Z",
     "hasIntradayData": true,
@@ -44,57 +44,12 @@
     "volumeRatio": 1.4123352197133718,
     "distanceToSma20Percent": 2.9578579029817083
   },
-  "news": {
-    "symbol": "2892",
-    "yahooSymbol": "2892.TW",
-    "name": "First Financial Holding Co., Ltd.",
-    "market": "tw",
-    "languagePriority": "zh-TW",
-    "dateWindow": {
-      "since": "2026-04-25",
-      "until": "2026-05-09",
-      "days": 14
-    },
-    "query": "2892 First Financial Holding Co., Ltd. 股票 新聞 最新 after:2026-04-25 before:2026-05-09",
-    "source": "Yahoo 股市 RSS + Yahoo Finance news + Google News RSS + DuckDuckGo HTML search",
-    "sourceStatus": [
-      {
-        "source": "Yahoo 股市 RSS",
-        "status": "ok",
-        "count": 0
-      },
-      {
-        "source": "Yahoo Finance news",
-        "status": "ok",
-        "count": 1
-      },
-      {
-        "source": "Google News RSS",
-        "status": "ok",
-        "count": 0
-      },
-      {
-        "source": "DuckDuckGo HTML search",
-        "status": "ok",
-        "count": 0
-      }
-    ],
-    "fetchedAt": "2026-05-09T09:56:53.912Z",
-    "results": [
-      {
-        "title": "ZIM to Release First Quarter 2026 Results on Wednesday, May 20, 2026",
-        "url": "https://finance.yahoo.com/markets/stocks/articles/zim-release-first-quarter-2026-120000718.html",
-        "snippet": "PR Newswire",
-        "source": "Yahoo Finance · PR Newswire",
-        "publishedAt": "2026-04-29T12:00:00.000Z"
-      }
-    ]
-  },
+  "news": null,
   "watchlist": [
     {
       "symbol": "2892",
       "yahooSymbol": "2892.TW",
-      "name": "First Financial Holding Co., Ltd.",
+      "name": "第一金",
       "market": "tw",
       "currency": "TWD",
       "exchangeName": "TAI",
@@ -111,7 +66,7 @@
       "volume": 39624454,
       "turnover": 1168921393,
       "marketCap": null,
-      "sector": "台股",
+      "sector": "金融保險",
       "dataSource": "Yahoo Finance",
       "lastUpdatedAt": "2026-05-08T05:30:22.000Z",
       "hasIntradayData": true,
@@ -120,7 +75,7 @@
     {
       "symbol": "00918",
       "yahooSymbol": "00918.TW",
-      "name": "UOB Taiwan High Dividend Recovery ETF",
+      "name": "大華優利高填息30",
       "market": "tw",
       "currency": "TWD",
       "exchangeName": "TAI",
@@ -137,7 +92,7 @@
       "volume": 54692036,
       "turnover": 1372770103.6000001,
       "marketCap": null,
-      "sector": "台股",
+      "sector": "ETF",
       "dataSource": "Yahoo Finance",
       "lastUpdatedAt": "2026-05-08T05:30:08.000Z",
       "hasIntradayData": true,
@@ -146,7 +101,7 @@
     {
       "symbol": "00919",
       "yahooSymbol": "00919.TW",
-      "name": "Capital Tip Customized Taiwan Select High Dividend ETF",
+      "name": "群益台灣精選高息",
       "market": "tw",
       "currency": "TWD",
       "exchangeName": "TAI",
@@ -163,7 +118,7 @@
       "volume": 207423513,
       "turnover": 5283076876.11,
       "marketCap": null,
-      "sector": "台股",
+      "sector": "ETF",
       "dataSource": "Yahoo Finance",
       "lastUpdatedAt": "2026-05-08T05:30:03.000Z",
       "hasIntradayData": true,
@@ -178,11 +133,6 @@
     "count": 3
   },
   "quoteErrors": [],
-  "generatedAt": "2026-05-09T09:56:53.912Z",
-  "refresh": {
-    "trigger": "telegram-stock-dashboard-command",
-    "status": "ok",
-    "previousSavedAt": "2026-05-09T09:56:52.171Z"
-  },
-  "savedAt": "2026-05-09T09:56:53.912Z"
+  "generatedAt": "2026-05-09T17:42:33.052Z",
+  "savedAt": "2026-05-09T17:42:33.573Z"
 }

@@ -124,6 +124,17 @@ module.exports = [
     { command: '/stock', description: '股市分析指令別名，等同於 /stocks。' },
     { command: '/stockboard', description: '開啟股市看板式分析上下文，等同於 /stocks。' },
     { command: '/stock-dashboard', description: '開啟股市 dashboard 分析上下文，等同於 /stocks。' },
+    {
+        command: '/rpg',
+        description: 'Golem 原生文字 RPG 模式控制（啟動/關閉/狀態/會員等級）。',
+        options: [
+            { name: 'start', description: '啟動目前聊天室的 RPG 模式' },
+            { name: 'stop', description: '關閉目前聊天室的 RPG 模式' },
+            { name: 'status', description: '查看 RPG 狀態與你的會員回合數' },
+            { name: 'bind', description: '產生手機綁定碼，將 Telegram/Discord 會員等級連動到 Dashboard 帳號' },
+            { name: 'tier <userId> <tier>', description: '管理員設定會員等級（visitor/general/sponsor）' }
+        ]
+    },
     { command: '/patch', description: '執行自我反思與代碼優化。' },
     { command: '/dashboard', description: '顯示控制台連線網址：包含本地 (Local) 與遠端 (Remote) 存取網址。' },
     { 

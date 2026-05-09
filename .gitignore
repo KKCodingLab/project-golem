@@ -88,6 +88,8 @@ data/temp_uploads
 data/dashboard/stock-symbol-directory.json
 data/dashboard/reference-files.json
 data/dashboard/reference-file-index.json
+data/rpg-memberships.json
+data/rpg-mobile-link-requests.json
 notebooklm_venv
 .gemini/
 .golem/

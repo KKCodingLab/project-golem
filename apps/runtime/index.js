@@ -82,6 +82,7 @@ const introspection = require('../../src/services/Introspection');
 const ActionQueue = require('../../src/core/ActionQueue'); // ✨ [v9.1] Dual-Queue Architecture
 const PromptShortcutManager = require('../../src/managers/PromptShortcutManager');
 const { normalizeShortcutKey } = PromptShortcutManager;
+const NativeRpgService = require('../../src/services/NativeRpgService');
 
 
 // 🎯 v9.1.5 解耦：不再於啟動時遍歷配置建立 Bot 與實體
@@ -584,6 +585,24 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
     const { brain, controller, autonomy, convoManager } = instance;
     let matchedPromptShortcut = null;
 
+    if (NativeRpgService.isControlCommand(ctx.text)) {
+        const controlReply = await NativeRpgService.handleControlCommand(ctx, brain);
+        if (controlReply) {
+            if (typeof controlReply === 'string') {
+                await ctx.reply(controlReply, { parse_mode: 'Markdown' });
+            } else {
+                await ctx.reply(controlReply.text || '', controlReply.replyOptions || {});
+            }
+            return;
+        }
+    }
+
+    const rpgTurnResult = await NativeRpgService.handleTurn(ctx, brain);
+    if (rpgTurnResult && rpgTurnResult.handled) {
+        await ctx.reply(rpgTurnResult.text, rpgTurnResult.replyOptions || {});
+        return;
+    }
+
     // ✨ Telegram 快捷指令：送出後自動展開為完整 Prompt 內容
     if (ctx.platform === 'telegram' && ctx.text) {
         const rawTelegramText = String(ctx.text || '').trim();
@@ -917,6 +936,15 @@ async function handleUnifiedCallback(ctx, actionData) {
             await ctx.event.deferReply({ flags: 64 });
         } catch (e) {
             console.error('Callback Discord deferReply Error:', e.message);
+        }
+    }
+
+    {
+        const instance = getOrCreateGolem();
+        const rpgCallback = await NativeRpgService.handleCallback(ctx, actionData, instance.brain);
+        if (rpgCallback && rpgCallback.handled) {
+            await ctx.reply(rpgCallback.text, rpgCallback.replyOptions || {});
+            return;
         }
     }
 

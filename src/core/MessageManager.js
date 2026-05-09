@@ -68,11 +68,22 @@ class MessageManager {
                     const channel = await ctx.instance.channels.fetch(ctx.chatId);
                     const dcOptions = { content: chunk };
                     if (options.reply_markup && options.reply_markup.inline_keyboard) {
-                        const row = new ActionRowBuilder();
-                        options.reply_markup.inline_keyboard[0].forEach(btn => {
-                            row.addComponents(new ButtonBuilder().setCustomId(btn.callback_data).setLabel(btn.text).setStyle(ButtonStyle.Primary));
-                        });
-                        dcOptions.components = [row];
+                        const rows = options.reply_markup.inline_keyboard
+                            .filter((row) => Array.isArray(row) && row.length > 0)
+                            .slice(0, 5)
+                            .map((row) => {
+                                const actionRow = new ActionRowBuilder();
+                                row.slice(0, 5).forEach((btn) => {
+                                    actionRow.addComponents(
+                                        new ButtonBuilder()
+                                            .setCustomId(String(btn.callback_data || 'RPG_STATUS'))
+                                            .setLabel(String(btn.text || '選項'))
+                                            .setStyle(ButtonStyle.Primary)
+                                    );
+                                });
+                                return actionRow;
+                            });
+                        if (rows.length > 0) dcOptions.components = rows;
                     }
                     
                     // Discord 處理附件 (併入最後一個 Chunk)
