@@ -19,6 +19,7 @@ interface MCPServer {
     command:     string;
     args:        string[];
     env:         Record<string, string>;
+    timeout?:    number;
     enabled:     boolean;
     description: string;
     connected:   boolean;
@@ -361,6 +362,7 @@ function ServerDialog({
         command: string;
         argsStr: string;
         envStr: string;
+        timeoutStr: string;
         description: string;
         enabled: boolean;
     };
@@ -375,6 +377,7 @@ function ServerDialog({
         command:     initial?.command     || '',
         argsStr:     (initial?.args || []).join(' '),
         envStr:      Object.entries(initial?.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+        timeoutStr:  String(initial?.timeout || 30000),
         description: initial?.description || '',
         enabled:     initial?.enabled !== false
     });
@@ -386,7 +389,16 @@ function ServerDialog({
             const eq = line.indexOf('=');
             if (eq > 0) env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
         }
-        onSave({ name: form.name, command: form.command, args, env, description: form.description, enabled: form.enabled });
+        const timeout = Number(form.timeoutStr);
+        onSave({
+            name: form.name,
+            command: form.command,
+            args,
+            env,
+            timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 30000,
+            description: form.description,
+            enabled: form.enabled,
+        });
     };
 
     return (
@@ -417,6 +429,24 @@ function ServerDialog({
                             placeholder={"ANTHROPIC_API_KEY=sk-...\nNODE_ENV=production"}
                             onChange={e => setForm(f => ({ ...f, envStr: e.target.value }))}
                         />
+                    </div>
+                    <div>
+                        <label className="text-sm text-muted-foreground mb-1 block">{isEnglish ? "RPC timeout (ms)" : "RPC 逾時時間 (毫秒)"}</label>
+                        <input
+                            type="number"
+                            min={1000}
+                            max={600000}
+                            step={1000}
+                            className="w-full bg-secondary border border-border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500"
+                            value={form.timeoutStr}
+                            placeholder="120000"
+                            onChange={e => setForm(f => ({ ...f, timeoutStr: e.target.value }))}
+                        />
+                        <p className="mt-1 text-[11px] text-muted-foreground/70">
+                            {isEnglish
+                                ? "Use a higher value for browser tools that launch Chrome or navigate slow pages."
+                                : "瀏覽器啟動或慢速頁面導航建議設高一點，例如 120000。"}
+                        </p>
                     </div>
                     <div>
                         <label className="text-sm text-muted-foreground mb-1 block">{isEnglish ? "Description" : "描述"}</label>

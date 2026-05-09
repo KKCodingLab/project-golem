@@ -22,7 +22,7 @@ class CommandHandler {
         const runLogic = async () => {
             let result;
             try {
-                result = await controller.runSequence(ctx, normalActions);
+                result = await controller.runSequence(ctx, normalActions, 0, brain);
             } catch (err) {
                 console.error('[CommandHandler] runSequence 拋出例外:', err);
                 await ctx.reply(`❌ **指令執行失敗**\n\`\`\`\n${err.message}\n\`\`\``, { parse_mode: 'Markdown' });

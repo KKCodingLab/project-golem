@@ -101,6 +101,52 @@ class NodeRouter {
             return await reply(`☕ **感謝您的支持！**\n\n${CONFIG.DONATE_URL}\n\n(Golem 覺得開心 🤖❤️)`);
         }
 
+        if (text === '/new') {
+            if (!brain) {
+                return await reply("⚠️ 大腦尚未初始化，無法執行 /new。");
+            }
+            await reply("🔄 收到 /new 指令！正在為您開啟全新的大腦對話神經元...");
+            try {
+                const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
+                const apiBackendLabel = brain.backend === 'lmstudio' ? 'LM Studio' : 'Ollama';
+                if (brain.page || isApiBackend) {
+                    await brain.init(true);
+                    return await reply(isApiBackend
+                        ? `✅ ${apiBackendLabel} 對話狀態已重置完成！目前大腦記憶脈絡已重新注入。`
+                        : "✅ 物理重置完成！已經為您切斷舊有記憶，現在這是一個全新且乾淨的 Golem 實體。");
+                }
+                return await reply("⚠️ 找不到活躍的網頁視窗，無法執行物理重置。");
+            } catch (e) {
+                return await reply(`❌ 物理重置失敗: ${e.message}`);
+            }
+        }
+
+        if (text === '/new_memory') {
+            if (!brain) {
+                return await reply("⚠️ 大腦尚未初始化，無法執行 /new_memory。");
+            }
+            await reply("💥 收到 /new_memory 指令！正在為您物理清空底層 DB 並執行深度轉生...");
+            try {
+                let clearResult = null;
+                if (brain.memoryDriver && typeof brain.memoryDriver.clearMemory === 'function') {
+                    clearResult = await brain.memoryDriver.clearMemory();
+                }
+                const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
+                const apiBackendLabel = brain.backend === 'lmstudio' ? 'LM Studio' : 'Ollama';
+                if (brain.page || isApiBackend) {
+                    await brain.init(true);
+                    const clearedCount = (clearResult && Number.isFinite(clearResult.cleared))
+                        ? ` (清除 ${clearResult.cleared} 筆)` : '';
+                    return await reply(isApiBackend
+                        ? `✅ 記憶庫已清空${clearedCount}，且 ${apiBackendLabel} 大腦脈絡已重新初始化完成。`
+                        : `✅ 記憶庫已清空${clearedCount}，網頁也已重置，這是一個全新且乾淨的 Golem 實體。`);
+                }
+                return await reply("⚠️ 找不到活躍的網頁視窗。");
+            } catch (e) {
+                return await reply(`❌ 深度轉生失敗: ${e.message}`);
+            }
+        }
+
         if (text === '/update' || text === '/reset') {
             if (isWeb) return await reply("⚠️ **系統更新** 功能目前僅限於機器人終端使用。");
             await ctx.reply("⚠️ **系統更新警告**\n這將強制覆蓋本地代碼。", {

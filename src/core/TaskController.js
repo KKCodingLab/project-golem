@@ -10,7 +10,8 @@ const NodeRouter = require('./NodeRouter');
 const GOLEM_SLASH_PREFIXES = [
     '/wiki', '/learn', '/skills', '/callme', '/help', '/menu',
     '/export', '/donate', '/support', '/update', '/reset',
-    '/model', '/reload', '/patch', '/project',
+    '/model', '/reload', '/patch', '/project', '/new', '/new_memory',
+    '/toolset', '/search', '/compress', '/profile', '/api', '/feedback',
 ];
 
 function shellQuote(value) {
@@ -75,12 +76,17 @@ class TaskController {
         }
     }
 
-    async runSequence(ctx, steps, startIndex = 0) {
+    async runSequence(ctx, steps, startIndex = 0, brain = null) {
         let reportBuffer = [];
         for (let i = startIndex; i < steps.length; i++) {
             const step = steps[i];
             const shouldAssembleSkill = step.action && step.action !== 'command';
-            let cmdToRun = step.cmd || step.parameter || step.command || (shouldAssembleSkill ? '' : step.parameters?.command) || "";
+            let cmdToRun =
+                step.cmd ||
+                step.parameter ||
+                step.command ||
+                (shouldAssembleSkill ? '' : (step.parameters?.command || step.parameters?.cmd || step.parameters?.parameter)) ||
+                "";
 
             // ✨ [v9.1 Hybrid Object Fix] 如果 cmd 為空但 action 存在，則自動組裝
             if (!cmdToRun && shouldAssembleSkill) {
@@ -120,7 +126,8 @@ class TaskController {
             if (isGolemSlash) {
                 console.log(`🔀 [TaskController] Golem 內建指令攔截: ${cmdToRun}`);
                 try {
-                    const result = await NodeRouter.handle({ text: cmdToRun, isAdmin: true }, ctx.brain);
+                    const activeBrain = brain || ctx.brain || null;
+                    const result = await NodeRouter.handle({ text: cmdToRun, isAdmin: true }, activeBrain);
                     const output = result || '（指令已執行，無輸出）';
                     reportBuffer.push(`[Step ${i + 1} Success] cmd: ${cmdToRun}\nResult:\n${output}`);
                 } catch (e) {

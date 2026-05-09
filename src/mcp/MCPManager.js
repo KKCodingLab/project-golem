@@ -14,6 +14,13 @@ const MCPToolCatalog = require('./MCPToolCatalog');
 
 const CONFIG_PATH = path.resolve(process.cwd(), 'data', 'mcp-servers.json');
 const MAX_LOG     = 500;
+const DEFAULT_TIMEOUT_MS = 30000;
+
+function normalizeTimeout(value, fallback = DEFAULT_TIMEOUT_MS) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.min(Math.max(Math.round(parsed), 1000), 600000);
+}
 
 class MCPManager extends EventEmitter {
     constructor() {
@@ -61,6 +68,7 @@ class MCPManager extends EventEmitter {
             command: cfg.command,
             args:    cfg.args    || [],
             env:     cfg.env     || {},
+            timeout: normalizeTimeout(cfg.timeout),
             enabled: cfg.enabled !== false,
             description: cfg.description || ''
         };
@@ -202,7 +210,7 @@ class MCPManager extends EventEmitter {
         const cfg = this._configs.find(c => c.name === name);
         if (!cfg) throw new Error(`MCP server "${name}" not found`);
 
-        const testClient = new MCPClient({ ...cfg, timeout: 10000 });
+        const testClient = new MCPClient({ ...cfg, timeout: normalizeTimeout(cfg.timeout, 10000) });
         try {
             await testClient.connect();
             const tools = await testClient.listTools();

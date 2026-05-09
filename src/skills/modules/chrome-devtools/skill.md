@@ -2,10 +2,60 @@
 【已載入技能：Chrome DevTools MCP — 網頁自動化與數據抓取】
 當 `chrome-devtools` MCP Server 已啟用時，你擁有完整的瀏覽器遠端控制能力，包含 DOM 操作、腳本執行、效能分析與 Lighthouse 審查。
 
+## 🔎 2026 跨節點數據探測：搜尋預設策略
+
+當任務是「搜尋網頁、找資料、查即時公開資訊」時，**不要優先操作 Google Search 網頁**。Google 經常擋自動化瀏覽器、機器人指紋、頻繁查詢與 DevTools 控制頁面，容易出現 CAPTCHA、空結果、跳轉或 timeout。
+
+### 首選節點：DuckDuckGo HTML
+- 目標節點：`https://html.duckduckgo.com/html/?q={KEYWORD}&kl=tw-tzh`
+- 使用 `html.duckduckgo.com`，不要使用 DuckDuckGo 主站。
+- 查繁體中文或台灣脈絡時保留 `kl=tw-tzh`。
+- 關鍵字必須 URL encode。
+- 若使用 shell 探測，必須帶人類瀏覽器指紋標頭：
+  - `User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1)`
+  - `Accept-Language: zh-TW,zh;q=0.9`
+  - `Referer: https://html.duckduckgo.com/`
+
+### MCP 工作流：把 DuckDuckGo HTML 整合進 Chrome DevTools
+系統已盡量以 Chrome 啟動參數設定 `Accept-Language`。`Referer` 屬於請求上下文，瀏覽器導航不一定能手動指定；若目標站仍擋瀏覽器自動化，改用下方 shell 後備探測模板。
+
+搜尋任務優先用以下 MCP 流程：
+1. `new_page` 或 `navigate_page` 到 `https://html.duckduckgo.com/html/?q={URL_ENCODED_KEYWORD}&kl=tw-tzh`，建議帶 `timeout: 60000`。
+2. `wait_for` 等待 `["DuckDuckGo", "No results"]`，建議帶 `timeout: 30000`。不要等待 CSS class 名稱，`wait_for` 只看頁面可見文字。
+3. 用 `evaluate_script` 解析結果，不要對整頁做複雜 Regex：
+   ```
+   {
+     "action": "mcp_call",
+     "server": "chrome-devtools",
+     "tool": "evaluate_script",
+     "parameters": {
+       "function": "() => Array.from(document.querySelectorAll('a.result__a')).slice(0, 10).map(a => ({ title: a.textContent.trim(), url: a.href }))"
+     }
+   }
+   ```
+4. 需要點進結果時，先 `take_snapshot` 取得 UID，再 `click`。禁止直接把 CSS selector 當作 `click.uid`。
+
+### Shell 後備探測模板
+如果 MCP 瀏覽器頁面被網站擋住、或任務只需要公開搜尋標題，可改用這個後備 one-liner：
+```
+curl -s -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1)" \
+  -H "Accept-Language: zh-TW,zh;q=0.9" \
+  -H "Referer: https://html.duckduckgo.com/" \
+  "https://html.duckduckgo.com/html/?q={KEYWORD}&kl=tw-tzh" \
+  | grep -oE "<a[^>]*class=\"result__a\"[^>]*>[^<]*</a>" \
+  | sed 's/<[^>]*>//g'
+```
+
+### 決策規則
+- 搜尋公開資料：優先 DuckDuckGo HTML。
+- 操作目標網站、登入後頁面、DOM/console/network debug：使用 Chrome DevTools MCP。
+- Google Search 只作最後備援，且遇到 CAPTCHA 或自動化阻擋時立刻切回 DuckDuckGo HTML 或其他公開來源。
+- 搜尋結果要回報來源標題與 URL，不要只輸出猜測摘要。
+
 > [!IMPORTANT]
 > **致命地雷警告 — 參數格式零容錯 (嚴禁違反)**
 >
-> 1. **`evaluate_script`**：參數名必須為 **`function`**，且值必須是標準匿名函式字串 `"function() { ... }"`。**絕對禁止**使用 `script`、`code` 等其他名稱，否則直接報錯 `-32602`。
+> 1. **`evaluate_script`**：參數名必須為 **`function`**，且值必須是函式字串，例如 `"() => document.title"` 或 `"function() { return document.title; }"`。**絕對禁止**使用 `script`、`code` 等其他名稱，否則直接報錯 `-32602`。
 > 2. **`wait_for`**：`text` 參數必須是**字串陣列**，例如 `["登入成功"]`。**絕對禁止**直接傳入字串，否則型別錯誤。
 > 3. **`click` / `hover`**：`uid` 參數必須來自 **`take_snapshot`** 回傳的 UID，**禁止**直接輸入 CSS Selector 或 XPath。
 > 4. **`navigate_page`** / **`new_page`**：`url` 必須包含完整協議頭，例如 `https://example.com`。

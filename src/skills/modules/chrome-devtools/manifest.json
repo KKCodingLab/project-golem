@@ -1,13 +1,24 @@
 {
   "id": "chrome-devtools",
   "name": "Chrome Devtools",
-  "description": "",
+  "description": "Chrome DevTools MCP browser automation, debugging, screenshots, DOM extraction, and DuckDuckGo HTML search fallback for Golem.",
   "type": "core",
   "enabled": true,
   "action": "chrome-devtools",
   "entry": "index.js",
   "prompt": "skill.md",
   "toolsets": [],
-  "triggers": [],
+  "triggers": [
+    "chrome",
+    "devtools",
+    "browser",
+    "瀏覽器",
+    "網頁自動化",
+    "搜尋",
+    "duckduckgo",
+    "html.duckduckgo.com",
+    "google search",
+    "資料探測"
+  ],
   "version": "1.0.0"
 }

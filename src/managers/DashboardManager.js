@@ -59,11 +59,23 @@ class DashboardManager {
             // v9.1 新增：捕捉 MultiAgent 會議紀錄
             type = 'agent';
             this._handleAgentWorkerLifecycle(cleanMsg);
-        } else if (cleanMsg.includes('[Queue]') || cleanMsg.includes('隊列')) {
+        } else if (
+            cleanMsg.includes('[Queue]')
+            || cleanMsg.includes('[Dialogue Queue')
+            || cleanMsg.includes('[Action Queue')
+            || cleanMsg.includes('隊列')
+            || cleanMsg.includes('佇列')
+        ) {
             // 處理隊列流量監控
             type = 'queue';
-            if (cleanMsg.includes('加入隊列')) this.state.queueCount++;
-            if (cleanMsg.includes('開始處理')) this.state.queueCount = Math.max(0, this.state.queueCount - 1);
+            const isEnqueue = cleanMsg.includes('加入隊列') || cleanMsg.includes('排入隊尾');
+            const isDequeue =
+                cleanMsg.includes('從隊列取出')
+                || cleanMsg.includes('開始處理')
+                || cleanMsg.includes('開始非同步執行');
+
+            if (isEnqueue) this.state.queueCount++;
+            if (isDequeue) this.state.queueCount = Math.max(0, this.state.queueCount - 1);
         } else if (cleanMsg.includes('[Memory]') || cleanMsg.includes('[Memory:Browser]')) {
             type = 'memory';
         }

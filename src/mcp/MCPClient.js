@@ -23,12 +23,12 @@ class MCPClient extends EventEmitter {
         this.command = config.command;
         this.args    = config.args || [];
         this.env     = config.env  || {};
-        this.timeout = config.timeout || 30000;
+        this.timeout = Number(config.timeout || 30000);
 
         this._process     = null;
         this._pending     = new Map();   // id -> { resolve, reject, timer }
         this._nextId      = 1;
-        this._buf         = '';
+        this._buf         = Buffer.alloc(0);
         this._connected   = false;
         this._capabilities = {};
         this._tools        = [];
@@ -106,10 +106,15 @@ class MCPClient extends EventEmitter {
     async callTool(toolName, params = {}) {
         if (!this._connected) throw new Error(`MCP Server "${this.name}" not connected`);
 
+        const toolTimeout = Number(params && params.timeout);
+        const rpcTimeout = Number.isFinite(toolTimeout) && toolTimeout > 0
+            ? Math.max(this.timeout, toolTimeout + 5000)
+            : this.timeout;
+
         const result = await this._rpc('tools/call', {
             name:      toolName,
             arguments: params
-        });
+        }, rpcTimeout);
         return result;
     }
 
@@ -120,7 +125,7 @@ class MCPClient extends EventEmitter {
     // ─── Private ───────────────────────────────────────────────────
     async _initialize() {
         const result = await this._rpc('initialize', {
-            protocolVersion: '2024-11-05',
+            protocolVersion: '2025-06-18',
             capabilities:    { tools: {} },
             clientInfo:      { name: 'project-golem', version: '1.0' }
         });
@@ -130,15 +135,15 @@ class MCPClient extends EventEmitter {
     }
 
     /** Send a JSON-RPC request, return promise that resolves with result */
-    _rpc(method, params) {
+    _rpc(method, params, timeout = this.timeout) {
         return new Promise((resolve, reject) => {
             const id  = this._nextId++;
             const msg = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n';
 
             const timer = setTimeout(() => {
                 this._pending.delete(id);
-                reject(new Error(`MCP RPC timeout (${this.timeout}ms) for method "${method}"`));
-            }, this.timeout);
+                reject(new Error(`MCP RPC timeout (${timeout}ms) for method "${method}"`));
+            }, timeout);
 
             this._pending.set(id, { resolve, reject, timer });
             this._process.stdin.write(msg);
@@ -153,19 +158,54 @@ class MCPClient extends EventEmitter {
     }
 
     _onData(chunk) {
-        this._buf += chunk.toString();
-        const lines = this._buf.split('\n');
-        this._buf   = lines.pop(); // keep incomplete last line
+        this._buf = Buffer.concat([this._buf, Buffer.from(chunk)]);
 
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            try {
-                const msg = JSON.parse(trimmed);
-                this._handleMessage(msg);
-            } catch (e) {
-                // Some servers output non-JSON lines (debug info) — ignore
+        while (this._buf.length > 0) {
+            if (this._buf.toString('utf8', 0, Math.min(this._buf.length, 32)).startsWith('Content-Length:')) {
+                const headerEnd = this._findHeaderEnd(this._buf);
+                if (headerEnd === -1) return;
+
+                const headerText = this._buf.toString('utf8', 0, headerEnd.index);
+                const match = headerText.match(/Content-Length:\s*(\d+)/i);
+                if (!match) {
+                    this._buf = this._buf.slice(headerEnd.next);
+                    continue;
+                }
+
+                const contentLength = Number(match[1]);
+                const bodyStart = headerEnd.next;
+                const bodyEnd = bodyStart + contentLength;
+                if (this._buf.length < bodyEnd) return;
+
+                const body = this._buf.toString('utf8', bodyStart, bodyEnd);
+                this._buf = this._buf.slice(bodyEnd);
+                this._parseMessage(body);
+                continue;
             }
+
+            const newline = this._buf.indexOf(0x0a);
+            if (newline === -1) return;
+            const line = this._buf.toString('utf8', 0, newline).trim();
+            this._buf = this._buf.slice(newline + 1);
+            if (!line || /^Content-Length:/i.test(line)) continue;
+            this._parseMessage(line);
+        }
+    }
+
+    _findHeaderEnd(buffer) {
+        const crlf = buffer.indexOf('\r\n\r\n');
+        if (crlf !== -1) return { index: crlf, next: crlf + 4 };
+        const lf = buffer.indexOf('\n\n');
+        if (lf !== -1) return { index: lf, next: lf + 2 };
+        return -1;
+    }
+
+    _parseMessage(raw) {
+        try {
+            const msg = JSON.parse(raw.trim());
+            this._handleMessage(msg);
+        } catch (e) {
+            // Some servers output non-JSON lines (debug info) — ignore
         }
     }
 

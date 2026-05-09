@@ -29,6 +29,21 @@ class SystemNativeDriver {
         const filepath = path.join(this.baseDir, filename);
         fs.writeFileSync(filepath, `---\ndate: ${new Date().toISOString()}\ntype: ${metadata.type || 'general'}\n---\n${text}`, 'utf8');
     }
+    async clearMemory() {
+        if (!fs.existsSync(this.baseDir)) return { cleared: 0 };
+        let cleared = 0;
+        const entries = fs.readdirSync(this.baseDir);
+        for (const name of entries) {
+            if (!/^mem_\d+\.md$/i.test(name)) continue;
+            const target = path.join(this.baseDir, name);
+            try {
+                fs.rmSync(target, { force: true });
+                cleared += 1;
+            } catch (_) { }
+        }
+        console.log(`🗑️ [Memory:Native] Cleared ${cleared} memory files`);
+        return { cleared };
+    }
     async addSchedule(task, time) { console.warn("⚠️ Native 模式不支援排程"); }
     async checkDueTasks() { return []; }
 }

@@ -11,9 +11,30 @@ const { toolsetManager } = require('../../src/managers/ToolsetManager');
 const { resolveEnabledSkills, OPTIONAL_SKILLS } = require('../../src/skills/skillsConfig');
 const SkillPackageRegistry = require('../../src/managers/SkillPackageRegistry');
 const ConfigManager = require('../../src/config');
+const COMMAND_DEFS = require('../../src/config/commands');
 
 function getMaxResponseWords() {
     return Number(ConfigManager?.CONFIG?.MAX_RESPONSE_WORDS) || 0;
+}
+
+function summarizeCoreCommands() {
+    const keep = new Set(['/skills', '/learn', '/new', '/new_memory', '/toolset', '/search', '/project']);
+    const cmds = (Array.isArray(COMMAND_DEFS) ? COMMAND_DEFS : [])
+        .map(item => String(item && item.command ? item.command : '').trim())
+        .filter(cmd => keep.has(cmd));
+    return [...new Set(cmds)];
+}
+
+async function summarizeEnabledMcpServers() {
+    try {
+        const cfgPath = path.resolve(process.cwd(), 'data', 'mcp-servers.json');
+        const raw = await fs.readFile(cfgPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        const servers = Array.isArray(parsed) ? parsed.filter(s => s && s.enabled !== false) : [];
+        return servers.map(s => String(s.name || '').trim()).filter(Boolean);
+    } catch (_) {
+        return [];
+    }
 }
 
 class ProtocolFormatter {
@@ -103,7 +124,17 @@ ${selectedPrompt}
 7. ReAct: If you use [GOLEM_ACTION], DO NOT guess the result in [GOLEM_REPLY]. Wait for Observation.
 8. SKILL BOUNDARY: You are STRICTLY FORBIDDEN from autonomously inspecting, scanning, or loading any files in 'src/skills/'. You DO NOT HAVE A PHYSICAL BODY or FILESYSTEM presence; you only exist within this conversation. Use ONLY the skills provided in the 'CORE SKILL PROTOCOLS' section below. If a skill is not listed there, you DO NOT have it.
 9. WORKSPACE: If you cannot access Google Workspace (@Google Drive/Keep/etc.), explicitly tell the user to enable the extension.
-${maxResponseWords > 0 ? `10. LENGTH: 🚨 STRICT LIMIT 🚨 Keep your ENTIRE reply under ${maxResponseWords} characters/words. Be extremely concise.` : ''}
+10. LOCAL AGENT IDENTITY (NON-NEGOTIABLE):
+- You are a LOCAL EXECUTION AGENT running on the host machine, not a pure chatbot.
+- For local OS/repo/file operations, prioritize \`{"action":"command","parameter":"..."}\`.
+- For built-in packaged capabilities, use exact skill action names only.
+- For external systems/connectors/APIs exposed by MCP, use \`{"action":"mcp_call","server":"...","tool":"...","parameters":{...}}\`.
+- If confidence is low between Skill and MCP, ask ONE concise clarification question first and set [GOLEM_ACTION] to \`null\`.
+- Never invent action names, server names, or tool names.
+11. COMMAND RECALL:
+- Built-in slash commands are available and valid. Remember these frequently used commands:
+- ${summarizeCoreCommands().map((cmd) => `\`${cmd}\``).join(', ') || '`/skills`, `/learn`, `/new`, `/new_memory`, `/toolset`, `/search`, `/project`'}
+${maxResponseWords > 0 ? `LENGTH RULE: 🚨 STRICT LIMIT 🚨 Keep your ENTIRE reply under ${maxResponseWords} characters/words. Be extremely concise.` : ''}
 ${observerPrompt}
 [USER INPUT / SYSTEM MESSAGE]
 ${text}`;
@@ -225,6 +256,34 @@ ${text}`;
             // Fallback 邏輯可以保留或交給 SkillIndexManager 處理
         }
 
+        const safeSkillActions = (() => {
+            try {
+                return skillManager
+                    .listSkills()
+                    .map((skill) => String(skill && skill.name ? skill.name : '').trim())
+                    .filter(Boolean)
+                    .sort((a, b) => a.localeCompare(b));
+            } catch (_) {
+                return [];
+            }
+        })();
+        const enabledMcpServers = await summarizeEnabledMcpServers();
+        const coreCommands = summarizeCoreCommands();
+        const MAX_ACTION_SHOW = 80;
+        const shownSkillActions = safeSkillActions.slice(0, MAX_ACTION_SHOW);
+        const hiddenSkillCount = Math.max(0, safeSkillActions.length - shownSkillActions.length);
+
+        systemPrompt += `\n\n### 🎯 EXECUTION CATALOG (LOCAL AGENT)\n`;
+        systemPrompt += `- Primary mission: operate as a local execution agent on host OS (${systemFingerprint}).\n`;
+        systemPrompt += `- Action lanes: \`command\` (local OS/repo/file), \`<skill_action>\` (built-in packaged capability), \`mcp_call\` (external connectors/tools).\n`;
+        systemPrompt += `- Skill actions (${safeSkillActions.length}): ${shownSkillActions.length > 0 ? shownSkillActions.map((name) => `\`${name}\``).join(', ') : '（none）'}\n`;
+        if (hiddenSkillCount > 0) {
+            systemPrompt += `- (omitted ${hiddenSkillCount} more skill actions to control prompt length)\n`;
+        }
+        systemPrompt += `- Enabled MCP servers (${enabledMcpServers.length}): ${enabledMcpServers.length > 0 ? enabledMcpServers.map((name) => `\`${name}\``).join(', ') : '（none）'}\n`;
+        systemPrompt += `- Common slash commands: ${coreCommands.length > 0 ? coreCommands.map((cmd) => `\`${cmd}\``).join(', ') : '`/skills`, `/learn`, `/new`, `/new_memory`, `/toolset`, `/search`, `/project`'}\n`;
+        systemPrompt += `- FATAL RULE: Never invent action/server/tool names. If uncertain, ask one concise clarification question first.\n`;
+
         const superProtocol = `
 \n\n【⚠️ GOLEM PROTOCOL v9.1.5 - TWO-TIER ARCHITECTURE + OS-AWARE】
 You act as a middleware OS. You MUST strictly follow this comprehensive output format.
@@ -233,7 +292,7 @@ DO NOT use emojis in tags. DO NOT output raw text outside of these blocks.
 1. **Format Structure**:
 Your response must be strictly divided into these 3 sections:
 
-[[BEGIN:reqId]]
+<BEGIN_TAG>
 [GOLEM_MEMORY]
 - Manage long-term state, project context, and user preferences.
 - 🧠 **HIPPOCAMPUS**: Memory consolidation layer. Do NOT attempt to read external skill files.
@@ -288,9 +347,17 @@ ${maxResponseWords > 0 ? `- Length: 🚨 STRICT LIMIT 🚨 Keep your ENTIRE repl
 - You are STRICTLY FORBIDDEN from using [GOLEM_ACTION] (no terminal commands, no cron jobs, no scripts) to read, send, or create any Google Workspace data (Emails, Calendar events, Docs).
 - 📅 FOR CREATING EVENTS/EMAILS: If the user asks to schedule a meeting or send an email, YOU MUST ONLY use pure text in [GOLEM_REPLY] containing the extension trigger (e.g., "好的，我現在為您呼叫 @Google Calendar 建立行程..."). 
 - DO NOT worry about clicking "Save" or "Confirm" buttons. The frontend system has an automated "Ghost Clicker" that will handle UI confirmations for you. Just trigger the extension in your reply!
-[[END:reqId]]
+6. 🔀 MCP vs SKILL vs COMMAND ROUTING:
+- Prefer \`command\` for local OS/repo/file operations.
+- Prefer Skill action for packaged built-in capabilities that already exist in CORE SKILL PROTOCOLS.
+- Prefer \`mcp_call\` for external integrations/connectors/browser automation exposed by MCP.
+- If confidence is low between lanes, ask ONE concise clarification question first and keep \`[GOLEM_ACTION]\` as \`null\`.
+- Never invent unknown action/server/tool names.
+<END_TAG>
 
-🚨 CRITICAL: Use the exact [[BEGIN:reqId]] and [[END:reqId]] tags provided in each turn!
+🚨 CRITICAL ENVELOPE RULE:
+- <BEGIN_TAG> and <END_TAG> are placeholders in this spec only. Never output these literal tokens.
+- In real turns, use the exact dynamic tags provided by runtime and copy them exactly.
 `;
 
         const finalPrompt = systemPrompt + superProtocol;

@@ -1067,7 +1067,7 @@ async function handleUnifiedCallback(ctx, actionData) {
 
                 let remainingResult = "";
                 try {
-                    remainingResult = await controller.runSequence(ctx, steps, nextIndex + 1) || "";
+                    remainingResult = await controller.runSequence(ctx, steps, nextIndex + 1, brain) || "";
                 } catch (err) {
                     console.warn(`⚠️ [System] 執行後續步驟時發生警告: ${err.message}`);
                 }

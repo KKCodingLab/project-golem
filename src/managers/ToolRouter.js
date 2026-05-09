@@ -6,6 +6,8 @@ const ToolUsePolicy = require('./ToolUsePolicy');
 const MCPToolCatalog = require('../mcp/MCPToolCatalog');
 
 const MCP_CONFIG_PATH = path.resolve(process.cwd(), 'data', 'mcp-servers.json');
+const LOCAL_COMMAND_RE = /(terminal|shell|bash|zsh|cmd|命令|指令|終端機|本機|專案|repo|資料夾|檔案|目錄|路徑|安裝|npm|pnpm|yarn|node|python|git|ls|pwd|cd|cat|sed|grep|rg|build|test|lint|run|execute|執行|編譯|啟動|server)/i;
+const EXTERNAL_SYSTEM_RE = /(@gmail|@google|calendar|gmail|drive|mcp|devtools|notion|slack|teams|github[^a-z]|telegram|discord|瀏覽器自動化|外部服務|第三方)/i;
 const STOPWORDS = new Set([
     'the', 'and', 'for', 'with', 'from', 'this', 'that', 'what', 'when', 'where', 'how',
     '你', '我', '他', '她', '它', '我們', '你們', '請', '幫我', '可以', '一下', '這個', '那個',
@@ -109,6 +111,29 @@ function compactJson(value) {
     return JSON.stringify(value, null, 2).replace(/\n/g, '\n  ');
 }
 
+function isLikelyCommandTask(query) {
+    const text = String(query || '');
+    if (!text.trim()) return false;
+    if (!LOCAL_COMMAND_RE.test(text)) return false;
+    if (EXTERNAL_SYSTEM_RE.test(text)) return false;
+    return true;
+}
+
+function loadCoreSlashCommands() {
+    try {
+        const defs = require('../config/commands');
+        const keep = new Set(['/new', '/new_memory', '/skills', '/learn', '/toolset', '/search', '/project']);
+        return (Array.isArray(defs) ? defs : [])
+            .filter((item) => item && keep.has(String(item.command || '').trim()))
+            .map((item) => ({
+                command: String(item.command || '').trim(),
+                description: String(item.description || '').trim()
+            }));
+    } catch (_) {
+        return [];
+    }
+}
+
 class ToolRouter {
     constructor(options = {}) {
         this.userDataDir = options.userDataDir || null;
@@ -121,6 +146,7 @@ class ToolRouter {
         const maxSkills = Number(options.maxSkills || 5);
         const maxMcpTools = Number(options.maxMcpTools || 6);
         const activeTools = new Set(this.activeTools || toolsetManager.getActiveTools());
+        const requestClass = this.policy.classifyRequest(query);
 
         const skillCandidates = SkillPackageRegistry.listSkillPackages({ userDataDir: this.userDataDir })
             .filter(pkg => pkg.enabled !== false)
@@ -174,21 +200,35 @@ class ToolRouter {
         const filteredMcpTools = this.policy.filter(query, mcpTools)
             .sort((a, b) => b.score - a.score);
 
+        const commandLane = {
+            recommended: requestClass.shouldRoute && isLikelyCommandTask(query),
+            reason: requestClass.shouldRoute && isLikelyCommandTask(query)
+                ? 'local_os_or_repo_operation'
+                : 'prefer_skill_or_mcp_or_text',
+        };
+
         return {
             skills,
             mcpTools: filteredMcpTools.slice(0, maxMcpTools),
+            commandLane,
+            slashCommands: loadCoreSlashCommands(),
             activeScene: this.activeScene,
         };
     }
 
     buildRoutingHint(query, options = {}) {
         const result = this.route(query, options);
-        if (result.skills.length === 0 && result.mcpTools.length === 0) return '';
+        if (result.skills.length === 0 && result.mcpTools.length === 0 && !result.commandLane.recommended) return '';
 
         const lines = [
             '<tool-routing>',
             `[System note: 以下是本輪依使用者訊息自動產生的工具建議。若任務符合，優先使用；若不符合，可以忽略。當工具能取得事實、操作外部系統或執行專門能力時，不要只用文字猜測。Active scene: ${result.activeScene}]`,
         ];
+
+        if (result.commandLane.recommended) {
+            lines.push('Relevant command lane:');
+            lines.push('- command: local OS/repo operation detected. Use shell action format: {"action":"command","parameter":"<native command>"}');
+        }
 
         if (result.skills.length > 0) {
             lines.push('Relevant skills:');
@@ -211,7 +251,15 @@ class ToolRouter {
         }
 
         lines.push('Decision rules:');
+        lines.push('- Route priority: local OS/repo work => command; packaged capability => skill action; external integration/service/browser connector => mcp_call.');
+        lines.push('- Never use mcp_call for pure local shell tasks. Never use command for external connector tasks that already have MCP tools.');
         lines.push(...this.policy.buildRules());
+        if (result.slashCommands.length > 0) {
+            lines.push('Core slash commands (can be triggered directly when user asks):');
+            for (const item of result.slashCommands) {
+                lines.push(`- ${item.command}: ${item.description}`);
+            }
+        }
         lines.push('- 若推薦工具不足以完成任務，先用可用工具探測，不要杜撰不存在的工具。');
         lines.push('</tool-routing>');
         return lines.join('\n');

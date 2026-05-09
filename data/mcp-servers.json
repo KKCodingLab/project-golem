@@ -1,15 +1,21 @@
 [
   {
     "name": "chrome-devtools",
-    "command": "npx",
+    "command": "node",
     "args": [
-      "-y",
-      "chrome-devtools-mcp@latest",
-      "--user-data-dir=/Users/arvin/.cache/chrome-devtools-mcp/chrome-profile-v2"
+      "/Users/arvin/.npm/_npx/15c61037b1978c83/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js",
+      "--headless",
+      "--no-usage-statistics",
+      "--no-performance-crux",
+      "--chromeArg=--accept-lang=zh-TW,zh;q=0.9",
+      "--chromeArg=--no-sandbox",
+      "--chromeArg=--disable-setuid-sandbox",
+      "--userDataDir=/Users/arvin/Desktop/project-golem-plus/.golem/chrome-devtools-profile"
     ],
     "env": {},
+    "timeout": 120000,
     "enabled": true,
-    "description": "Chrome DevTools MCP — 網頁除錯、效能分析、DOM 操作、Lighthouse",
+    "description": "Chrome DevTools MCP — 穩定瀏覽器自動化、DOM 操作、截圖、DuckDuckGo HTML 搜尋",
     "cachedTools": [
       {
         "name": "click",

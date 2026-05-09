@@ -38,11 +38,17 @@ module.exports = function registerMcpRoutes(server) {
             }
         }
 
+        const timeoutRaw = Number(payload.timeout);
+        const timeout = Number.isFinite(timeoutRaw) && timeoutRaw > 0
+            ? Math.min(Math.max(Math.round(timeoutRaw), 1000), 600000)
+            : 30000;
+
         return {
             name: sanitizeServerName(payload.name),
             command,
             args,
             env,
+            timeout,
             enabled: payload.enabled !== false,
             description: String(payload.description || '').slice(0, 500),
         };

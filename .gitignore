@@ -90,3 +90,6 @@ data/dashboard/reference-files.json
 data/dashboard/reference-file-index.json
 notebooklm_venv
 .gemini/
+.golem/
+skills.db
+web-dashboard/tsconfig.tsbuildinfo
