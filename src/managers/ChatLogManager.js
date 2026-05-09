@@ -640,6 +640,38 @@ class ChatLogManager {
         }
     }
 
+    /**
+     * 🧨 Deep wipe chat logs and summaries for current golem.
+     * Used by /new_memory to prevent historical re-injection.
+     * @returns {Promise<{messages:number,summaries:number}>}
+     */
+    async clearAllData() {
+        if (!this._isInitialized || !this.db) {
+            await this.init();
+        }
+        const snapshot = await this.getAsync(`
+            SELECT
+              (SELECT COUNT(*) FROM messages) AS messages,
+              (SELECT COUNT(*) FROM summaries) AS summaries
+        `);
+        const messages = Number(snapshot && snapshot.messages) || 0;
+        const summaries = Number(snapshot && snapshot.summaries) || 0;
+
+        await this.runAsync('BEGIN TRANSACTION');
+        try {
+            await this.runAsync('DELETE FROM messages');
+            await this.runAsync('DELETE FROM summaries');
+            // Rebuild FTS index to keep messages_fts synchronized after bulk delete.
+            await this.runAsync(`INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')`);
+            await this.runAsync('COMMIT');
+            console.log(`🧹 [LogManager] Cleared chat logs (messages=${messages}, summaries=${summaries})`);
+            return { messages, summaries };
+        } catch (error) {
+            await this.runAsync('ROLLBACK').catch(() => {});
+            throw error;
+        }
+    }
+
 
 }
 

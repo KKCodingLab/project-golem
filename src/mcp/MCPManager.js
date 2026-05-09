@@ -16,6 +16,8 @@ const CONFIG_PATH = path.resolve(process.cwd(), 'data', 'mcp-servers.json');
 const MAX_LOG     = 500;
 const DEFAULT_TIMEOUT_MS = 30000;
 const CHROME_PROFILE_LOCK_RE = /(browser is already running|user.?data.?dir(?:ectory)?.*in use|processsingleton|singletonlock|profile.*in use|opening in existing browser session)/i;
+const CHROME_REMOTE_DEFAULT_URLS = ['http://127.0.0.1:9222', 'http://127.0.0.1:9223'];
+const CHROME_PROFILE_LOCK_FILES = ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'RunningChromeVersion'];
 
 function normalizeTimeout(value, fallback = DEFAULT_TIMEOUT_MS) {
     const parsed = Number(value);
@@ -35,6 +37,59 @@ function extractUserDataDirArg(args = []) {
         }
     }
     return '';
+}
+
+function stripUserDataDirArg(args = []) {
+    const list = Array.isArray(args) ? [...args] : [];
+    const output = [];
+    for (let i = 0; i < list.length; i += 1) {
+        const cur = String(list[i] || '');
+        const lower = cur.toLowerCase();
+        if (lower.startsWith('--userdatadir=')) continue;
+        if (lower.startsWith('--user-data-dir=')) continue;
+        if (lower === '--userdatadir' || lower === '--user-data-dir') {
+            i += 1;
+            continue;
+        }
+        output.push(cur);
+    }
+    return output;
+}
+
+function extractBrowserUrlArg(args = []) {
+    const list = Array.isArray(args) ? args : [];
+    for (let i = 0; i < list.length; i += 1) {
+        const cur = String(list[i] || '');
+        const lower = cur.toLowerCase();
+        if (lower.startsWith('--browserurl=')) return cur.slice(cur.indexOf('=') + 1);
+        if (lower === '--browserurl') return String(list[i + 1] || '').trim();
+    }
+    return '';
+}
+
+function replaceBrowserUrlArg(args = [], browserUrl = '') {
+    const list = Array.isArray(args) ? [...args] : [];
+    const output = [];
+    let replaced = false;
+    for (let i = 0; i < list.length; i += 1) {
+        const cur = String(list[i] || '');
+        const lower = cur.toLowerCase();
+        if (lower.startsWith('--browserurl=')) {
+            output.push(`--browserUrl=${browserUrl}`);
+            replaced = true;
+            continue;
+        }
+        if (lower === '--browserurl') {
+            output.push(cur);
+            output.push(browserUrl);
+            replaced = true;
+            i += 1;
+            continue;
+        }
+        output.push(cur);
+    }
+    if (!replaced) output.push(`--browserUrl=${browserUrl}`);
+    return output;
 }
 
 function replaceUserDataDirArg(args = [], nextDir = '') {
@@ -71,9 +126,21 @@ function replaceUserDataDirArg(args = [], nextDir = '') {
     return output;
 }
 
+function isChromeDevtoolsServer(cfg) {
+    if (!cfg || !cfg.name) return false;
+    return String(cfg.name).trim().toLowerCase() === 'chrome-devtools';
+}
+
 function shouldRetryWithFallbackProfile(cfg, error) {
+    if (!isChromeDevtoolsServer(cfg)) return false;
     const hasUserDataDir = Boolean(extractUserDataDirArg(cfg && cfg.args));
     if (!hasUserDataDir) return false;
+    const text = String((error && error.message) || '');
+    return CHROME_PROFILE_LOCK_RE.test(text);
+}
+
+function shouldRetryWithBrowserBridge(cfg, error) {
+    if (!isChromeDevtoolsServer(cfg)) return false;
     const text = String((error && error.message) || '');
     return CHROME_PROFILE_LOCK_RE.test(text);
 }
@@ -81,6 +148,115 @@ function shouldRetryWithFallbackProfile(cfg, error) {
 function buildFallbackProfileDir(baseDir) {
     const stamp = Date.now().toString(36);
     return `${baseDir}-fallback-${stamp}`;
+}
+
+function isPidAlive(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (err) {
+        if (err && err.code === 'ESRCH') return false;
+        return true; // EPERM or others => treat as alive/unknown
+    }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseSingletonLockPid(lockPath) {
+    try {
+        const linkValue = fs.readlinkSync(lockPath);
+        const match = String(linkValue || '').match(/-(\d+)\s*$/);
+        if (!match) return null;
+        const pid = Number(match[1]);
+        return Number.isInteger(pid) ? pid : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function cleanupChromeProfileLocks(userDataDir) {
+    const profileDir = String(userDataDir || '').trim();
+    if (!profileDir || !fs.existsSync(profileDir)) return;
+
+    const lockPath = path.join(profileDir, 'SingletonLock');
+    const lockPid = parseSingletonLockPid(lockPath);
+    if (lockPid && isPidAlive(lockPid)) {
+        return; // active owner still alive, do not remove lock files
+    }
+
+    for (const file of CHROME_PROFILE_LOCK_FILES) {
+        const target = path.join(profileDir, file);
+        try {
+            if (fs.existsSync(target)) fs.rmSync(target, { force: true });
+        } catch (err) {
+            if (err && (err.code === 'EACCES' || err.code === 'EPERM')) {
+                console.warn(
+                    `[MCPManager] Cannot remove lock file (${target}) due to permission. ` +
+                    `Run: sudo chown -R "$USER":staff "${profileDir}"`
+                );
+            }
+        }
+    }
+}
+
+async function normalizeChromeProfileBeforeLaunch(userDataDir) {
+    const profileDir = String(userDataDir || '').trim();
+    if (!profileDir || !fs.existsSync(profileDir)) return;
+
+    const lockPath = path.join(profileDir, 'SingletonLock');
+    const lockPid = parseSingletonLockPid(lockPath);
+    if (!lockPid) {
+        cleanupChromeProfileLocks(profileDir);
+        return;
+    }
+
+    const autoKill = String(process.env.GOLEM_MCP_CHROME_AUTOKILL_LOCK_OWNER || 'true').toLowerCase() !== 'false';
+    if (isPidAlive(lockPid) && autoKill) {
+        try {
+            console.warn(`[MCPManager] Detected active lock owner PID=${lockPid}, sending SIGTERM...`);
+            process.kill(lockPid, 'SIGTERM');
+        } catch (_) { }
+
+        const deadline = Date.now() + 2200;
+        while (isPidAlive(lockPid) && Date.now() < deadline) {
+            await sleep(200);
+        }
+
+        if (isPidAlive(lockPid)) {
+            try {
+                console.warn(`[MCPManager] PID=${lockPid} still alive, sending SIGKILL...`);
+                process.kill(lockPid, 'SIGKILL');
+            } catch (_) { }
+            const killDeadline = Date.now() + 1200;
+            while (isPidAlive(lockPid) && Date.now() < killDeadline) {
+                await sleep(150);
+            }
+        }
+    }
+
+    cleanupChromeProfileLocks(profileDir);
+}
+
+function parseBridgeUrlList(raw = '') {
+    const text = String(raw || '').trim();
+    if (!text) return [];
+    return text
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function resolveBridgeUrls(cfg = {}) {
+    const fromConfigEnv = parseBridgeUrlList(cfg && cfg.env && cfg.env.GOLEM_CHROME_BRIDGE_URLS);
+    const fromProcessEnv = parseBridgeUrlList(process.env.GOLEM_CHROME_BRIDGE_URLS);
+    const current = extractBrowserUrlArg(cfg && cfg.args);
+    const ordered = [];
+    if (current) ordered.push(current);
+    ordered.push(...fromConfigEnv, ...fromProcessEnv, ...CHROME_REMOTE_DEFAULT_URLS);
+    return [...new Set(ordered)];
 }
 
 class MCPManager extends EventEmitter {
@@ -197,7 +373,16 @@ class MCPManager extends EventEmitter {
      */
     async callTool(serverName, toolName, params = {}) {
         const startTime = Date.now();
-        const client = this._clients.get(serverName);
+        const normalized = MCPToolCatalog.normalizeToolCall({
+            server: serverName,
+            tool: toolName,
+            parameters: params
+        }, this._configs);
+        const effectiveServer = normalized.server || serverName;
+        const effectiveTool = normalized.tool || toolName;
+        const effectiveParams = normalized.parameters || params;
+
+        const client = this._clients.get(effectiveServer);
         if (!client) throw new Error(`MCP server "${serverName}" not connected`);
 
         let success = true;
@@ -205,7 +390,7 @@ class MCPManager extends EventEmitter {
         let error   = null;
 
         try {
-            result = await client.callTool(toolName, params);
+            result = await client.callTool(effectiveTool, effectiveParams);
         } catch (e) {
             success = false;
             error   = e.message;
@@ -214,13 +399,15 @@ class MCPManager extends EventEmitter {
             const duration = Date.now() - startTime;
             const logEntry = {
                 time:       new Date().toISOString(),
-                server:     serverName,
-                tool:       toolName,
-                params:     params,
+                server:     effectiveServer,
+                tool:       effectiveTool,
+                params:     effectiveParams,
                 success,
                 result:     success ? result : null,
                 error:      success ? null : error,
-                durationMs: duration
+                durationMs: duration,
+                aliasedFrom: normalized.aliasedFrom || null,
+                paramFixes: normalized.paramFixes || []
             };
             this._appendLog(logEntry);
             this.emit('mcpLog', logEntry);
@@ -301,9 +488,35 @@ class MCPManager extends EventEmitter {
     async _startClient(cfg) {
         // Stop existing client if any
         await this._stopClient(cfg.name);
+        if (isChromeDevtoolsServer(cfg)) {
+            const userDataDir = extractUserDataDirArg(cfg.args || []);
+            await normalizeChromeProfileBeforeLaunch(userDataDir);
+        }
         try {
             return await this._startClientWithConfig(cfg, { mode: 'primary' });
         } catch (err) {
+            if (shouldRetryWithBrowserBridge(cfg, err)) {
+                const bridgeUrls = resolveBridgeUrls(cfg);
+                for (const bridgeUrl of bridgeUrls) {
+                    const bridgeCfg = {
+                        ...cfg,
+                        args: replaceBrowserUrlArg(stripUserDataDirArg(cfg.args || []), bridgeUrl)
+                    };
+                    try {
+                        console.warn(
+                            `[MCPManager] "${cfg.name}" profile lock detected. ` +
+                            `Retrying via browser bridge: ${bridgeUrl}`
+                        );
+                        return await this._startClientWithConfig(bridgeCfg, {
+                            mode: 'bridge_browser_url',
+                            bridgeUrl
+                        });
+                    } catch (bridgeErr) {
+                        console.warn(`[MCPManager] Bridge retry failed (${bridgeUrl}): ${bridgeErr.message}`);
+                    }
+                }
+            }
+
             if (!shouldRetryWithFallbackProfile(cfg, err)) throw err;
 
             const originalDir = extractUserDataDirArg(cfg.args);
@@ -346,7 +559,8 @@ class MCPManager extends EventEmitter {
             args: launchCfg.args,
             mode: meta.mode || 'primary',
             originalDir: meta.originalDir || null,
-            fallbackDir: meta.fallbackDir || null
+            fallbackDir: meta.fallbackDir || null,
+            bridgeUrl: meta.bridgeUrl || null
         };
 
         try {
@@ -357,6 +571,8 @@ class MCPManager extends EventEmitter {
         this._clients.set(launchCfg.name, client);
         if (meta.mode === 'fallback_profile') {
             console.log(`[MCPManager] ✅ Connected (fallback profile): "${launchCfg.name}" (${client.tools.length} tools)`);
+        } else if (meta.mode === 'bridge_browser_url') {
+            console.log(`[MCPManager] ✅ Connected (browser bridge ${meta.bridgeUrl}): "${launchCfg.name}" (${client.tools.length} tools)`);
         } else {
             console.log(`[MCPManager] ✅ Connected: "${launchCfg.name}" (${client.tools.length} tools)`);
         }

@@ -305,20 +305,22 @@ class PageInteractor {
                         const chunkSize = PageInteractor.getComposerInsertChunkSize();
                         const totalChunks = Math.max(1, Math.ceil(textToPaste.length / chunkSize));
                         const startedAt = Date.now();
-                        console.log(`🧩 [PageInteractor] 大文本分塊植入啟動: ${textToPaste.length} chars, chunks=${totalChunks}, chunkSize=${chunkSize}`);
+                        const progressInterval = Math.max(1, Math.floor(totalChunks / 8));
+                        console.log(`⏳ [PageInteractor] AI 正在讀取長文本 ${textToPaste.length} 字，共分 ${totalChunks} 段。`);
                         for (let idx = 0; idx < totalChunks; idx += 1) {
                             const start = idx * chunkSize;
                             const end = Math.min(textToPaste.length, start + chunkSize);
                             const chunk = textToPaste.slice(start, end);
                             await this.page.keyboard.insertText(chunk);
-                            if (idx === 0 || idx === totalChunks - 1 || (idx + 1) % 3 === 0) {
+                            if (idx === 0 || idx === totalChunks - 1 || (idx + 1) % progressInterval === 0) {
                                 const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-                                console.log(`🧩 [PageInteractor] composer 注入進度 ${idx + 1}/${totalChunks} (${end}/${textToPaste.length}, ${elapsed}s)`);
+                                console.log(`⏳ [PageInteractor] AI 正在讀取長文本 ${textToPaste.length} 字，共分 ${totalChunks} 段，目前第 ${idx + 1} 段 (${elapsed}s)。`);
                             }
                             if (idx < totalChunks - 1) {
                                 await new Promise(r => setTimeout(r, 20));
                             }
                         }
+                        console.log(`✅ [PageInteractor] 長文本讀取完成，共 ${textToPaste.length} 字 / ${totalChunks} 段。`);
                     } else {
                         await this.page.keyboard.insertText(textToPaste);
                     }

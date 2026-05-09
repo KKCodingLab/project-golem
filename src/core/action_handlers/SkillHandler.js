@@ -70,7 +70,17 @@ class SkillHandler {
                     await sendFeedback(message);
                     return true;
                 }
-                const result     = await mcpManager.callTool(server, tool, parameters);
+                const normalizedCall = validation.normalizedCall || { server, tool, parameters };
+                const normServer = normalizedCall.server || server;
+                const normTool = normalizedCall.tool || tool;
+                const normParams = normalizedCall.parameters || parameters;
+                if (normalizedCall.aliasedFrom || (Array.isArray(normalizedCall.paramFixes) && normalizedCall.paramFixes.length > 0)) {
+                    console.log(
+                        `[MCP] 🔧 正規化: ${server}/${tool} -> ${normServer}/${normTool}` +
+                        `${normalizedCall.paramFixes?.length ? ` | fixes=${normalizedCall.paramFixes.join(',')}` : ''}`
+                    );
+                }
+                const result = await mcpManager.callTool(normServer, normTool, normParams);
 
                 // 格式化結果。完整內容只送回 LLM，避免工具輸出被截斷後影響後續分析。
                 let feedbackResult = '';
@@ -83,8 +93,8 @@ class SkillHandler {
                 }
 
                 // 🔇 結果只寫 log + 送給 LLM (sendFeedback)，不 ctx.reply
-                console.log(`[MCP] ✅ ${server}/${tool} 完成 (${feedbackResult.length} chars)`);
-                await sendFeedback(`[MCP Result - ${server}/${tool}]\n${feedbackResult}`);
+                console.log(`[MCP] ✅ ${normServer}/${normTool} 完成 (${feedbackResult.length} chars)`);
+                await sendFeedback(`[MCP Result - ${normServer}/${normTool}]\n${feedbackResult}`);
             } catch (e) {
                 // ⚠️ 錯誤仍然通知用戶（靜默失敗比用戶困惑更糟）
                 console.error(`[MCP] ❌ ${server}/${tool} 執行錯誤:`, e.message);

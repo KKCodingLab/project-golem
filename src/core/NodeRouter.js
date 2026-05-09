@@ -134,21 +134,38 @@ class NodeRouter {
             if (!brain) {
                 return await reply("⚠️ 大腦尚未初始化，無法執行 /new_memory。");
             }
-            await reply("💥 收到 /new_memory 指令！正在為您物理清空底層 DB 並執行深度轉生...");
+            await reply("💥 收到 /new_memory 指令！正在執行 Deep Wipe（記憶庫 + ChatLog + Wiki + Learnings）...");
             try {
-                let clearResult = null;
-                if (brain.memoryDriver && typeof brain.memoryDriver.clearMemory === 'function') {
-                    clearResult = await brain.memoryDriver.clearMemory();
-                }
+                const wipeReport = (typeof brain.deepResetMemory === 'function')
+                    ? await brain.deepResetMemory()
+                    : { memoryDriver: null, chatLogs: null, wikiPagesCleared: 0, learningsCleared: false, errors: ['brain.deepResetMemory unavailable'] };
                 const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
                 const apiBackendLabel = brain.backend === 'lmstudio' ? 'LM Studio' : 'Ollama';
                 if (brain.page || isApiBackend) {
                     await brain.init(true);
-                    const clearedCount = (clearResult && Number.isFinite(clearResult.cleared))
-                        ? ` (清除 ${clearResult.cleared} 筆)` : '';
-                    return await reply(isApiBackend
-                        ? `✅ 記憶庫已清空${clearedCount}，且 ${apiBackendLabel} 大腦脈絡已重新初始化完成。`
-                        : `✅ 記憶庫已清空${clearedCount}，網頁也已重置，這是一個全新且乾淨的 Golem 實體。`);
+                    if (typeof brain.waitUntilUserInputReady === 'function') {
+                        await brain.waitUntilUserInputReady({ maxReadyWaitMs: 90000 });
+                    }
+                    const memoryCleared = Number(wipeReport?.memoryDriver?.cleared || 0);
+                    const messageCleared = Number(wipeReport?.chatLogs?.messages || 0);
+                    const summariesCleared = Number(wipeReport?.chatLogs?.summaries || 0);
+                    const wikiCleared = Number(wipeReport?.wikiPagesCleared || 0);
+                    const learningsCleared = wipeReport?.learningsCleared ? 'yes' : 'no';
+                    const errorText = Array.isArray(wipeReport?.errors) && wipeReport.errors.length > 0
+                        ? `\n⚠️ 部分清理失敗: ${wipeReport.errors.join(' | ')}`
+                        : '';
+
+                    return await reply(
+                        (isApiBackend
+                            ? `✅ Deep Wipe 完成，且 ${apiBackendLabel} 大腦脈絡已重新初始化。`
+                            : `✅ Deep Wipe 完成，網頁已重置，這是一個全新且乾淨的 Golem 實體。`) +
+                        `\n- memoryDriver.cleared=${memoryCleared}` +
+                        `\n- chatlog.messages=${messageCleared}` +
+                        `\n- chatlog.summaries=${summariesCleared}` +
+                        `\n- wiki.files=${wikiCleared}` +
+                        `\n- learnings.cleared=${learningsCleared}` +
+                        errorText
+                    );
                 }
                 return await reply("⚠️ 找不到活躍的網頁視窗。");
             } catch (e) {

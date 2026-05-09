@@ -15,6 +15,10 @@ function typeMatches(value, schema = {}) {
 function validateMcpCall({ server, tool, parameters = {} }, options = {}) {
     const servers = options.servers;
     const errors = [];
+    const normalized = MCPToolCatalog.normalizeToolCall({ server, tool, parameters }, servers);
+    const effectiveServer = normalized.server;
+    const effectiveTool = normalized.tool;
+    const effectiveParams = normalized.parameters;
 
     if (!server) errors.push('Missing required field: server');
     if (!tool) errors.push('Missing required field: tool');
@@ -22,15 +26,15 @@ function validateMcpCall({ server, tool, parameters = {} }, options = {}) {
         errors.push('parameters must be an object');
     }
 
-    const catalogTool = server && tool ? MCPToolCatalog.findTool(server, tool, servers) : null;
-    if (server && tool && !catalogTool) {
-        errors.push(`Unknown MCP tool: ${server}/${tool}`);
+    const catalogTool = effectiveServer && effectiveTool ? MCPToolCatalog.findTool(effectiveServer, effectiveTool, servers) : null;
+    if (effectiveServer && effectiveTool && !catalogTool) {
+        errors.push(`Unknown MCP tool: ${effectiveServer}/${effectiveTool}`);
     }
 
     const schema = catalogTool?.inputSchema || null;
     const props = schema?.properties || {};
     const required = Array.isArray(schema?.required) ? schema.required : [];
-    const params = parameters && typeof parameters === 'object' && !Array.isArray(parameters) ? parameters : {};
+    const params = effectiveParams && typeof effectiveParams === 'object' && !Array.isArray(effectiveParams) ? effectiveParams : {};
 
     for (const key of required) {
         if (params[key] === undefined || params[key] === null || params[key] === '') {
@@ -59,7 +63,14 @@ function validateMcpCall({ server, tool, parameters = {} }, options = {}) {
         ok: errors.length === 0,
         errors,
         tool: catalogTool,
-        example: catalogTool?.example || (server && tool ? MCPToolCatalog.buildActionExample(server, tool, schema || {}) : null),
+        normalizedCall: {
+            server: effectiveServer,
+            tool: effectiveTool,
+            parameters: params,
+            aliasedFrom: normalized.aliasedFrom,
+            paramFixes: normalized.paramFixes || []
+        },
+        example: catalogTool?.example || (effectiveServer && effectiveTool ? MCPToolCatalog.buildActionExample(effectiveServer, effectiveTool, schema || {}) : null),
     };
 }
 

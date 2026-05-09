@@ -83,3 +83,39 @@ Golem 會自動識別並發出如下 Action：
 3. **錯誤排查**：若 AI 找不到工具，請檢查 Dashboard 中的 Server 是否處於 **Enabled** 狀態，並確認測試連線是否成功。
 
 更多官方 MCP Server 範例，請參考：[Model Context Protocol GitHub](https://github.com/modelcontextprotocol/servers)
+
+---
+
+## 🧭 Chrome DevTools MCP：正式版 Chrome 橋接模式（避免 Profile 鎖）
+
+當 `chrome-devtools` MCP 遇到 `browser is already running` / `profile in use` 時，建議改採「正式版 Chrome 遠端除錯橋接」。
+
+### 1) 先啟動正式版 Chrome（Host 端）
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir="/tmp/golem_chrome"
+```
+
+若 `9222` 被佔用，改用 `9223`。
+
+### 2) Golem 端自動重試行為（已內建）
+
+最新版 `MCPManager` 在偵測到 profile lock 時，會自動按以下順序重試：
+
+1. `--browserUrl=http://127.0.0.1:9222`
+2. `--browserUrl=http://127.0.0.1:9223`
+3. 若仍失敗，退回既有 fallback profile 機制
+
+### 3) 可自訂橋接位址
+
+可在 `chrome-devtools` 的 `env` 增加：
+
+```json
+{
+  "GOLEM_CHROME_BRIDGE_URLS": "http://127.0.0.1:9222,http://127.0.0.1:9223"
+}
+```
+
+系統會依順序嘗試，並在日誌中顯示實際使用的 bridge URL。
