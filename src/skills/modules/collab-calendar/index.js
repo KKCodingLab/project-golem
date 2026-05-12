@@ -24,7 +24,21 @@ async function run(ctx) {
     //   1. {"action": "collab-calendar", "args": {"action": "today"}}      ← 新格式
     //   2. {"action": "collab-calendar", "parameters": {"action": "today"}} ← 舊格式
     const args = ctx.args || ctx.parameters || {};
-    const action = String(args.action || 'list').toLowerCase();
+    const rawAction = String(args.action || args.action_type || args.type || 'list').toLowerCase();
+    const actionMap = {
+        create: 'add',
+        new: 'add',
+        add: 'add',
+        edit: 'update',
+        update: 'update',
+        remove: 'delete',
+        delete: 'delete',
+        list: 'list',
+        today: 'today',
+        upcoming: 'upcoming',
+        search: 'search',
+    };
+    const action = actionMap[rawAction] || rawAction;
 
     try {
         // ── list ──────────────────────────────────────────────────────────────
@@ -84,11 +98,28 @@ async function run(ctx) {
 
         // ── add ───────────────────────────────────────────────────────────────
         if (action === 'add' || action === 'create') {
-            const { title, start, end, description, location, owner, reminderMinutes } = args;
+            const title = args.title ?? args.summary ?? args.name;
+            const start = args.start ?? args.start_time ?? args.startTime;
+            const end = args.end ?? args.end_time ?? args.endTime;
+            const description = args.description ?? args.note ?? args.notes;
+            const location = args.location ?? args.place;
+            const owner = args.owner;
+            const reminderMinutes = args.reminderMinutes ?? args.reminder_minutes;
 
-            if (!title) return '❌ 新增失敗：缺少事件標題 (title)。';
-            if (!start) return '❌ 新增失敗：缺少開始時間 (start)，格式：ISO 8601，例如 2025-05-15T14:00:00+08:00。';
-            if (!end) return '❌ 新增失敗：缺少結束時間 (end)。';
+            const createExample = `{
+  "action": "collab-calendar",
+  "args": {
+    "action": "add",
+    "title": "收退貨",
+    "start": "2026-05-14T14:00:00+08:00",
+    "end": "2026-05-14T15:00:00+08:00",
+    "owner": "golem"
+  }
+}`;
+
+            if (!title) return `❌ 新增失敗：缺少事件標題 (title)。\n範例：\n${createExample}`;
+            if (!start) return `❌ 新增失敗：缺少開始時間 (start)，格式：ISO 8601。\n範例：\n${createExample}`;
+            if (!end) return `❌ 新增失敗：缺少結束時間 (end)。\n範例：\n${createExample}`;
 
             const result = CalendarCollabService.createEvent({
                 title: String(title),
@@ -158,7 +189,8 @@ async function run(ctx) {
             return lines.join('\n\n');
         }
 
-        return `❌ 不支援的操作：${action}。支援的操作：list、today、upcoming、add、update、delete、search。`;
+        return `❌ 不支援的操作：${action}。支援的操作：list、today、upcoming、add、update、delete、search。\n` +
+            `範例：{"action":"collab-calendar","args":{"action":"add","title":"收退貨","start":"2026-05-14T14:00:00+08:00","end":"2026-05-14T15:00:00+08:00"}}`;
 
     } catch (e) {
         console.error('❌ [collab-calendar skill]', e);

@@ -584,6 +584,31 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
     const instance = getOrCreateGolem();
     const { brain, controller, autonomy, convoManager } = instance;
     let matchedPromptShortcut = null;
+    const notifyBrainSystemChange = async (title, details) => {
+        const message = `[System Observation]\n` +
+            `${title}\n` +
+            `${details}\n` +
+            `請將此變更視為最新系統狀態，後續動作請遵循新設定。`;
+        try {
+            if (convoManager && typeof convoManager.enqueue === 'function') {
+                await convoManager.enqueue(ctx, message, {
+                    isPriority: true,
+                    bypassDebounce: true,
+                    isSystemFeedback: true,
+                    allowActions: false,
+                });
+                return;
+            }
+            if (brain && typeof brain.sendMessage === 'function') {
+                await brain.sendMessage(message, false, {
+                    isSystemFeedback: true,
+                    allowActions: false,
+                });
+            }
+        } catch (err) {
+            console.warn(`[SystemSync] Failed to notify brain: ${err.message}`);
+        }
+    };
 
     if (NativeRpgService.isControlCommand(ctx.text)) {
         const controlReply = await NativeRpgService.handleControlCommand(ctx, brain);
@@ -719,6 +744,10 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
             if (typeof brain.switchModel === 'function') {
                 const result = await brain.switchModel(targetModel);
                 await ctx.reply(result);
+                await notifyBrainSystemChange(
+                    '模型模式已由管理員切換',
+                    `model_mode=${targetModel}`
+                );
             } else {
                 await ctx.reply("⚠️ 您的 GolemBrain 尚未掛載 switchModel 功能，請確認檔案是否已更新。");
             }
@@ -762,6 +791,10 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         SecurityManager.currentLevel = targetLevel;
         const levelInfo = SecurityManager.LEVELS['L'+targetLevel];
         await ctx.reply(`🛡️ **安全等級已動態切換**\n目前的自主控制權限已調整為：**L${targetLevel} (${levelInfo.name})**\n所有風險等級高於此設定的指令都將遭到自動攔截。`, { parse_mode: 'Markdown' });
+        await notifyBrainSystemChange(
+            '安全等級已由管理員切換',
+            `current_level=L${targetLevel}\nlevel_name=${levelInfo.name}`
+        );
         return;
     }
 
@@ -795,8 +828,16 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         const displayName = ctx.instance.username ? `@${ctx.instance.username}` : `[${forceTargetId || 'golem_A'}]`;
         if (isEnable) {
             await ctx.reply(`🤫 ${displayName} 已進入「完全靜默模式」。\n我將暫時關閉感知，且不會記錄任何對話。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `silent_mode=enabled\nobserver_mode=disabled`
+            );
         } else {
             await ctx.reply(`📢 ${displayName} 已解除靜默模式。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `silent_mode=disabled\nobserver_mode=${convoManager.observerMode ? 'enabled' : 'disabled'}`
+            );
         }
         return;
     }
@@ -817,8 +858,16 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
 
         if (isEnable) {
             await ctx.reply(`👁️ ${displayName} 已進入「觀察者模式」。\n我會安靜地同步所有對話上下文，但預設不發言。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `observer_mode=enabled\nsilent_mode=${convoManager.silentMode ? 'enabled' : 'disabled'}`
+            );
         } else {
             await ctx.reply(`📢 ${displayName} 已解除觀察者模式。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `observer_mode=disabled\nsilent_mode=${convoManager.silentMode ? 'enabled' : 'disabled'}`
+            );
         }
         return;
     }

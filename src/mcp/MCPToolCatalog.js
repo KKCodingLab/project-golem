@@ -197,6 +197,44 @@ function normalizeParametersForTool(serverName, toolName, parameters = {}) {
                     fixes.push('pageId<=alias');
                 }
             }
+        } else if (toolName === 'click' || toolName === 'hover') {
+            if (params.uid === undefined) {
+                const candidate = params.elementId ?? params.element_id ?? params.id ?? params.targetUid;
+                if (candidate !== undefined && candidate !== null) {
+                    params.uid = String(candidate);
+                    fixes.push('uid<=alias');
+                }
+            }
+        } else if (toolName === 'fill') {
+            if (params.uid === undefined) {
+                const uidCandidate = params.elementId ?? params.element_id ?? params.id ?? params.targetUid;
+                if (uidCandidate !== undefined && uidCandidate !== null) {
+                    params.uid = String(uidCandidate);
+                    fixes.push('uid<=alias');
+                }
+            }
+            if (params.value === undefined) {
+                const valueCandidate = params.text ?? params.content ?? params.message;
+                if (valueCandidate !== undefined && valueCandidate !== null) {
+                    params.value = String(valueCandidate);
+                    fixes.push('value<=alias');
+                }
+            }
+        } else if (toolName === 'drag') {
+            if (params.from_uid === undefined) {
+                const fromCandidate = params.fromUid ?? params.sourceUid ?? params.source;
+                if (fromCandidate !== undefined && fromCandidate !== null) {
+                    params.from_uid = String(fromCandidate);
+                    fixes.push('from_uid<=alias');
+                }
+            }
+            if (params.to_uid === undefined) {
+                const toCandidate = params.toUid ?? params.targetUid ?? params.target;
+                if (toCandidate !== undefined && toCandidate !== null) {
+                    params.to_uid = String(toCandidate);
+                    fixes.push('to_uid<=alias');
+                }
+            }
         } else if (toolName === 'type_text') {
             if (params.text === undefined) {
                 const candidate = params.value ?? params.content ?? params.message;

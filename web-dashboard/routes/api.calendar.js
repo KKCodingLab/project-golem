@@ -218,8 +218,8 @@ module.exports = function registerCalendarRoutes(server) {
 
   router.post('/api/calendar/apple/sync', requireCalendarWrite, async (req, res) => {
     try {
-      const { daysBefore = 30, daysAfter = 180 } = req.body || {};
-      const result = await CalendarCollabService.syncFromApple({ daysBefore, daysAfter });
+      const { daysBefore = 30, daysAfter = 180, timeoutMs } = req.body || {};
+      const result = await CalendarCollabService.syncFromApple({ daysBefore, daysAfter, timeoutMs, trigger: 'manual' });
       return res.json({ success: true, ...result });
     } catch (error) {
       return handleError(res, error);

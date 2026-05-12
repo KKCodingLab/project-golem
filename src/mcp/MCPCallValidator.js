@@ -76,9 +76,22 @@ function validateMcpCall({ server, tool, parameters = {} }, options = {}) {
 
 function formatValidationError(validation) {
     const lines = ['[MCP Validation Error]', ...validation.errors.map(error => `- ${error}`)];
+    const attempted = validation && validation.normalizedCall
+        ? validation.normalizedCall
+        : null;
+    if (attempted) {
+        lines.push('', 'Attempted call:', JSON.stringify(attempted, null, 2));
+    }
     if (validation.example) {
         lines.push('', 'Correct action format:', JSON.stringify(validation.example, null, 2));
     }
+    lines.push(
+        '',
+        'Tips:',
+        '- Always use action="mcp_call"',
+        '- Include both "server" and "tool"',
+        '- Put tool arguments under "parameters" as an object'
+    );
     return lines.join('\n');
 }
 

@@ -404,6 +404,27 @@ step_install_dashboard() {
     echo ""
 }
 
+run_rebuild_dashboard() {
+    echo ""
+    echo -e "  ${CYAN}🧱 重建 Web Dashboard...${NC}"
+    log "Rebuilding dashboard"
+
+    if [ ! -d "$SCRIPT_DIR/web-dashboard" ]; then
+        ui_error "找不到 web-dashboard 目錄，無法重建。"
+        echo ""
+        return 1
+    fi
+
+    # Stop running services to avoid file locks.
+    stop_system false >/dev/null 2>&1
+
+    # Clear stale build output; ignore failures and let build step report.
+    rm -rf "$SCRIPT_DIR/web-dashboard/.next" "$SCRIPT_DIR/web-dashboard/out"
+
+    step_install_dashboard
+    return 0
+}
+
 # ─── Clean Dependencies (Preserve configs) ───
 run_clean_dependencies() {
     echo ""

@@ -115,7 +115,21 @@ class TaskController {
                     console.log(`🔧 [TaskController] 自動組裝技能指令: ${cmdToRun}`);
                 } else {
                     console.warn(`⚠️ [TaskController] 找不到實體技能檔: ${skillPath}`);
-                    cmdToRun = `echo "⛔ [系統攔截] 找不到實體技能檔: ${skillPath} (可能為虛擬技能)。請改用 {\\\"action\\\": \\\"command\\\", \\\"command\\\": \\\"你的 shell 指令\\\"}。"`;
+                    const sampleSkills = SkillPackageRegistry.listSkillPackages()
+                        .map(pkg => String(pkg && (pkg.action || pkg.id) || '').trim())
+                        .filter(Boolean)
+                        .slice(0, 3);
+                    const sampleSkill = sampleSkills[0] || 'wiki';
+                    const helpLines = [
+                        `⛔ [系統攔截] 找不到實體技能檔: ${skillPath}`,
+                        `你使用的 action: ${actionName}`,
+                        `請改用正確格式：`,
+                        `1) 技能：{"action":"${sampleSkill}","args":{"input":"..."}}`,
+                        `2) MCP：{"action":"mcp_call","server":"chrome-devtools","tool":"navigate_page","parameters":{"url":"https://example.com"}}`,
+                        `3) 指令：{"action":"command","parameter":"ls -la"}`,
+                        `提示：先輸入 /skills 查看可用技能。`
+                    ];
+                    cmdToRun = `echo ${shellQuote(helpLines.join('\n'))}`;
                 }
             }
             // ── Golem 內建斜線指令攔截 ──────────────────────────────

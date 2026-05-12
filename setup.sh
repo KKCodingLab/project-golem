@@ -66,7 +66,7 @@ fi
 # Docker / Headless 指令允許在未安裝 Node.js 的主機上執行
 LIGHTWEIGHT_ONLY_MODE=false
 case "${1:-}" in
-    --docker|--headless-deploy|--headless-stop|--desktop-start|--desktop-stop|--desktop-status|--deploy-linux|--deploy-local|--deploy-docker|--deploy-auto|--status|--help|-h|--version)
+    --docker|--headless-deploy|--headless-stop|--desktop-start|--desktop-stop|--desktop-status|--deploy-linux|--deploy-local|--deploy-docker|--deploy-auto|--rebuild-dashboard|--status|--help|-h|--version)
         LIGHTWEIGHT_ONLY_MODE=true
         ;;
 esac
@@ -119,6 +119,7 @@ case "${1:-}" in
     --deploy-linux|--deploy-local) headless_one_click_deploy local ;;
     --deploy-docker) headless_one_click_deploy docker ;;
     --deploy-auto) headless_one_click_deploy auto ;;
+    --rebuild-dashboard) run_rebuild_dashboard ;;
     --doctor)    npm run doctor ;;
     --config)    step_check_env; config_wizard ;;
     --status)    print_status ;;
@@ -147,6 +148,7 @@ case "${1:-}" in
         echo "  --deploy-linux    Linux 本機一鍵安裝部署 (含 noVNC)"
         echo "  --deploy-docker   Docker 一鍵安裝部署 (含 noVNC)"
         echo "  --deploy-auto     自動判斷 Linux/Docker 一鍵部署"
+        echo "  --rebuild-dashboard 重建 Dashboard (清理 .next/out 後重新建置)"
         echo "  --doctor      執行系統環境自我診斷"
         echo "  --status      顯示系統狀態 (非互動)"
         echo "  --version     顯示版本號"
@@ -169,6 +171,7 @@ case "${1:-}" in
         echo "  ./setup.sh --deploy-docker  # Docker 一鍵安裝部署"
         echo "  ./setup.sh --headless-deploy --docker  # Docker + noVNC 一鍵部署"
         echo "  ./setup.sh --headless-deploy --local   # Linux 本機 + noVNC 一鍵部署"
+        echo "  ./setup.sh --rebuild-dashboard          # 重建 Dashboard"
         echo "  ./setup.sh --status         # 檢查狀態"
         echo ""
         exit 0

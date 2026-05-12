@@ -193,6 +193,51 @@ module.exports = function registerGolemRoutes(server) {
         }
     }
 
+    async function quiesceContextsForMemoryReincarnation(targetMemoryDir) {
+        const report = {
+            attempted: 0,
+            paused: [],
+            failed: [],
+        };
+        const normalizedTarget = path.resolve(targetMemoryDir);
+
+        for (const [golemId, instance] of server.contexts.entries()) {
+            const brain = instance && instance.brain;
+            if (!brain) continue;
+
+            const brainDir = path.resolve(String(brain.userDataDir || ''));
+            if (!brainDir || brainDir !== normalizedTarget) continue;
+
+            report.attempted += 1;
+            try {
+                if (instance.autonomy && typeof instance.autonomy.stop === 'function') {
+                    await instance.autonomy.stop();
+                }
+
+                const bot = brain.tgBot;
+                if (bot && typeof bot.stopPolling === 'function') {
+                    await bot.stopPolling().catch(() => {});
+                }
+
+                if (typeof brain.dispose === 'function') {
+                    await brain.dispose({ closeContext: true });
+                } else if (brain.browser && typeof brain.browser.close === 'function') {
+                    await brain.browser.close().catch(() => {});
+                }
+
+                brain.status = 'not_started';
+                report.paused.push(golemId);
+                console.log(`🧊 [WebServer] Quiesced Golem context for memory reincarnation: ${golemId}`);
+            } catch (error) {
+                const message = error && error.message ? error.message : String(error);
+                report.failed.push({ golemId, message });
+                console.warn(`⚠️ [WebServer] Failed to quiesce ${golemId} before memory reincarnation: ${message}`);
+            }
+        }
+
+        return report;
+    }
+
     router.get('/api/golems', (req, res) => {
         try {
             const EnvManager = require('../../src/utils/EnvManager');
@@ -393,7 +438,7 @@ module.exports = function registerGolemRoutes(server) {
         }
     });
 
-    router.post('/api/golems/memory-reincarnation/import', requireGolemOps, (req, res) => {
+    router.post('/api/golems/memory-reincarnation/import', requireGolemOps, async (req, res) => {
         if (!ensureLocalFileAccess(req, res)) return;
 
         try {
@@ -405,6 +450,14 @@ module.exports = function registerGolemRoutes(server) {
             const ConfigManager = require('../../src/config/index');
             const targetMemoryDir = path.resolve(ConfigManager.MEMORY_BASE_DIR);
             const sourceMemoryDir = path.resolve(source.memoryDir);
+            const quiesceReport = await quiesceContextsForMemoryReincarnation(targetMemoryDir);
+            if (quiesceReport.failed.length > 0) {
+                return res.status(409).json({
+                    error: '記憶轉生前無法暫停目前執行中的 Golem，已中止替換以避免資料不一致。',
+                    detail: '請先停止相關 Golem 或重啟後先不要啟動，再重試記憶轉生。',
+                    quiesceReport,
+                });
+            }
 
             if (sourceMemoryDir === targetMemoryDir) {
                 return res.status(400).json({ error: '來源與目前記憶資料夾相同，不需要轉生。' });
@@ -460,6 +513,7 @@ module.exports = function registerGolemRoutes(server) {
                 sourcePath: sourceMemoryDir,
                 targetPath: targetMemoryDir,
                 backupPath,
+                quiesceReport,
                 summary,
                 warning: summary.skipped.length > 0
                     ? '部分檔案因權限或特殊檔案類型無法複製，已跳過；可讀取的記憶已完成轉生。'

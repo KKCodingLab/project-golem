@@ -95,6 +95,22 @@ class NodeRouter {
             }
             return message; // 網頁端直接返回字串
         };
+        const notifyBrainSystemChange = async (title, details) => {
+            if (!brain || typeof brain.sendMessage !== 'function') return;
+            const message = `[System Observation]\n` +
+                `${title}\n` +
+                `${details}\n` +
+                `請將此變更視為最新系統狀態並遵循。`;
+            try {
+                await brain.sendMessage(message, false, {
+                    isSystemFeedback: true,
+                    allowActions: false,
+                    disableToolRouting: true,
+                });
+            } catch (err) {
+                console.warn(`[NodeRouter] system change sync failed: ${err.message}`);
+            }
+        };
 
         if (text.match(/^\/(help|menu|指令|功能)/)) {
             return await reply(await HelpManager.getManual(), { parse_mode: 'Markdown' });
@@ -187,6 +203,10 @@ class NodeRouter {
                 const persona = require('../skills/core/persona');
                 persona.setName('user', newName, brain.userDataDir);
                 await brain.init(true); // forceReload
+                await notifyBrainSystemChange(
+                    '使用者稱呼已更新',
+                    `callme=${newName}`
+                );
                 return await reply(`👌 沒問題，以後稱呼您為 **${newName}**。`);
             }
         }
@@ -700,6 +720,14 @@ class NodeRouter {
 
             // 切換場景
             const result = toolsetManager.switchScene(subCmd);
+            if (result && result.success) {
+                const active = toolsetManager.getActiveScene();
+                const activeTools = toolsetManager.getActiveTools();
+                await notifyBrainSystemChange(
+                    '工具場景已切換',
+                    `toolset_scene=${active}\nactive_tools=${activeTools.join(',')}`
+                );
+            }
             return await reply(result.message);
         }
 

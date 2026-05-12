@@ -131,6 +131,39 @@ function isChromeDevtoolsServer(cfg) {
     return String(cfg.name).trim().toLowerCase() === 'chrome-devtools';
 }
 
+function resolveNodeEntryArg(args = []) {
+    const list = Array.isArray(args) ? args : [];
+    for (const item of list) {
+        const cur = String(item || '').trim();
+        if (!cur) continue;
+        if (cur.startsWith('-')) continue;
+        return cur;
+    }
+    return '';
+}
+
+function ensureLaunchConfigHealthy(cfg) {
+    const command = String(cfg && cfg.command ? cfg.command : '').trim();
+    const args = Array.isArray(cfg && cfg.args) ? cfg.args : [];
+    const nodeLike = command === 'node' || command.endsWith('/node') || command.endsWith('\\node.exe');
+    if (!nodeLike) return;
+
+    const entry = resolveNodeEntryArg(args);
+    if (!entry) return;
+
+    const resolvedEntry = path.isAbsolute(entry) ? entry : path.resolve(process.cwd(), entry);
+    if (!fs.existsSync(resolvedEntry)) {
+        const err = new Error(
+            `MCP startup blocked: entry script not found (${resolvedEntry}). ` +
+            `Please update data/mcp-servers.json for server "${cfg.name}".`
+        );
+        err.code = 'MCP_ENTRY_NOT_FOUND';
+        err.server = cfg && cfg.name ? cfg.name : null;
+        err.entry = resolvedEntry;
+        throw err;
+    }
+}
+
 function shouldRetryWithFallbackProfile(cfg, error) {
     if (!isChromeDevtoolsServer(cfg)) return false;
     const hasUserDataDir = Boolean(extractUserDataDirArg(cfg && cfg.args));
@@ -488,6 +521,7 @@ class MCPManager extends EventEmitter {
     async _startClient(cfg) {
         // Stop existing client if any
         await this._stopClient(cfg.name);
+        ensureLaunchConfigHealthy(cfg);
         if (isChromeDevtoolsServer(cfg)) {
             const userDataDir = extractUserDataDirArg(cfg.args || []);
             await normalizeChromeProfileBeforeLaunch(userDataDir);

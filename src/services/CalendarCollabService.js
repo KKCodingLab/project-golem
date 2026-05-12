@@ -5,6 +5,9 @@ const { execFile } = require('child_process');
 
 const DATA_DIR = path.resolve(process.cwd(), 'data', 'dashboard');
 const DATA_PATH = path.join(DATA_DIR, 'collab-calendar.json');
+const DEFAULT_APPLE_SYNC_TIMEOUT_MS = 60000;
+let appleAutoSyncTimer = null;
+let appleSyncInFlight = null;
 
 const DEFAULT_STATE = {
   version: 1,
@@ -16,6 +19,19 @@ const DEFAULT_STATE = {
       apiKey: '',
       calendarId: 'primary',
       syncDirection: 'google_to_local',
+      lastSyncAt: null,
+      lastSyncStatus: null,
+      lastSyncMessage: '',
+    },
+    apple: {
+      enabled: false,
+      mode: 'daily',
+      dailyTimes: ['09:00'],
+      intervalMinutes: 120,
+      daysBefore: 30,
+      daysAfter: 180,
+      timeoutSec: 60,
+      nextSyncAt: null,
       lastSyncAt: null,
       lastSyncStatus: null,
       lastSyncMessage: '',
@@ -48,6 +64,25 @@ function toBool(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
 }
 
+function toInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.floor(n) : fallback;
+}
+
+function normalizeDailyTimes(rawTimes) {
+  const arr = Array.isArray(rawTimes) ? rawTimes : [];
+  const uniq = new Set();
+  for (const raw of arr) {
+    const text = safeString(raw);
+    if (!/^\d{2}:\d{2}$/.test(text)) continue;
+    const hh = Number(text.slice(0, 2));
+    const mm = Number(text.slice(3, 5));
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) continue;
+    uniq.add(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+  }
+  return Array.from(uniq).sort();
+}
+
 function makeId() {
   return `evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
@@ -67,6 +102,21 @@ function ensureStateShape(raw) {
         lastSyncAt: state.settings?.google?.lastSyncAt || null,
         lastSyncStatus: state.settings?.google?.lastSyncStatus || null,
         lastSyncMessage: safeString(state.settings?.google?.lastSyncMessage),
+      },
+      apple: {
+        enabled: toBool(state.settings?.apple?.enabled),
+        mode: safeString(state.settings?.apple?.mode, 'daily') === 'interval' ? 'interval' : 'daily',
+        dailyTimes: normalizeDailyTimes(state.settings?.apple?.dailyTimes).length
+          ? normalizeDailyTimes(state.settings?.apple?.dailyTimes)
+          : ['09:00'],
+        intervalMinutes: Math.max(15, Math.min(1440, toInt(state.settings?.apple?.intervalMinutes, 120))),
+        daysBefore: Math.max(0, Math.min(365, toInt(state.settings?.apple?.daysBefore, 30))),
+        daysAfter: Math.max(1, Math.min(365, toInt(state.settings?.apple?.daysAfter, 180))),
+        timeoutSec: Math.max(10, Math.min(300, toInt(state.settings?.apple?.timeoutSec, 60))),
+        nextSyncAt: state.settings?.apple?.nextSyncAt || null,
+        lastSyncAt: state.settings?.apple?.lastSyncAt || null,
+        lastSyncStatus: state.settings?.apple?.lastSyncStatus || null,
+        lastSyncMessage: safeString(state.settings?.apple?.lastSyncMessage),
       },
     },
     events: Array.isArray(state.events) ? state.events : [],
@@ -243,7 +293,37 @@ function updateSettings(patch) {
       syncDirection: patch.google.syncDirection !== undefined ? safeString(patch.google.syncDirection, current.syncDirection || 'google_to_local') : current.syncDirection,
     };
   }
+  if (patch?.apple && typeof patch.apple === 'object') {
+    const current = state.settings.apple || {};
+    const nextMode = safeString(patch.apple.mode, current.mode || 'daily') === 'interval' ? 'interval' : 'daily';
+    const nextTimes = patch.apple.dailyTimes !== undefined
+      ? normalizeDailyTimes(patch.apple.dailyTimes)
+      : normalizeDailyTimes(current.dailyTimes);
+    state.settings.apple = {
+      ...current,
+      enabled: patch.apple.enabled !== undefined ? toBool(patch.apple.enabled) : toBool(current.enabled),
+      mode: nextMode,
+      dailyTimes: nextTimes.length ? nextTimes : ['09:00'],
+      intervalMinutes: patch.apple.intervalMinutes !== undefined
+        ? Math.max(15, Math.min(1440, toInt(patch.apple.intervalMinutes, 120)))
+        : Math.max(15, Math.min(1440, toInt(current.intervalMinutes, 120))),
+      daysBefore: patch.apple.daysBefore !== undefined
+        ? Math.max(0, Math.min(365, toInt(patch.apple.daysBefore, 30)))
+        : Math.max(0, Math.min(365, toInt(current.daysBefore, 30))),
+      daysAfter: patch.apple.daysAfter !== undefined
+        ? Math.max(1, Math.min(365, toInt(patch.apple.daysAfter, 180)))
+        : Math.max(1, Math.min(365, toInt(current.daysAfter, 180))),
+      timeoutSec: patch.apple.timeoutSec !== undefined
+        ? Math.max(10, Math.min(300, toInt(patch.apple.timeoutSec, 60)))
+        : Math.max(10, Math.min(300, toInt(current.timeoutSec, 60))),
+      nextSyncAt: current.nextSyncAt || null,
+      lastSyncAt: current.lastSyncAt || null,
+      lastSyncStatus: current.lastSyncStatus || null,
+      lastSyncMessage: safeString(current.lastSyncMessage),
+    };
+  }
   const saved = saveState(state);
+  refreshAppleAutoSync();
   return { settings: saved.settings, updatedAt: saved.updatedAt };
 }
 
@@ -627,77 +707,156 @@ async function deleteEventFromGoogle(sourceId) {
   return true;
 }
 
-function execAppleScript(script) {
+function execAppleScript(script, { timeoutMs = DEFAULT_APPLE_SYNC_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('osascript', ['-e', script], { maxBuffer: 1024 * 1024 * 2 }, (error, stdout, stderr) => {
+    const child = execFile('osascript', ['-e', script], { maxBuffer: 1024 * 1024 * 2 }, (error, stdout, stderr) => {
       if (error) return reject(new Error(stderr || error.message));
       resolve(String(stdout || '').trim());
     });
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* noop */ }
+      reject(new Error(`Apple sync timeout (${Math.floor(timeoutMs / 1000)}s)`));
+    }, timeoutMs);
+    child.on('exit', () => clearTimeout(timer));
   });
 }
 
-async function syncFromApple({ daysBefore = 30, daysAfter = 180 } = {}) {
-  const before = Number.isFinite(Number(daysBefore)) ? Number(daysBefore) : 30;
-  const after = Number.isFinite(Number(daysAfter)) ? Number(daysAfter) : 180;
+function computeNextAppleSyncAt(apple, now = new Date()) {
+  if (!apple?.enabled) return null;
+  if (apple.mode === 'interval') {
+    const min = Math.max(15, Math.min(1440, toInt(apple.intervalMinutes, 120)));
+    return new Date(now.getTime() + min * 60 * 1000).toISOString();
+  }
+  const times = normalizeDailyTimes(apple.dailyTimes).length ? normalizeDailyTimes(apple.dailyTimes) : ['09:00'];
+  const candidates = times.map((hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+    return d;
+  });
+  candidates.sort((a, b) => a.getTime() - b.getTime());
+  return candidates[0]?.toISOString() || null;
+}
+
+function scheduleAppleAutoSync() {
+  if (appleAutoSyncTimer) clearTimeout(appleAutoSyncTimer);
+  appleAutoSyncTimer = null;
+  const state = loadState();
+  const apple = state.settings?.apple;
+  if (!apple?.enabled) return;
+  const nextAt = computeNextAppleSyncAt(apple, new Date());
+  state.settings.apple.nextSyncAt = nextAt;
+  saveState(state);
+  if (!nextAt) return;
+  const delay = Math.max(1000, new Date(nextAt).getTime() - Date.now());
+  appleAutoSyncTimer = setTimeout(async () => {
+    try {
+      await syncFromApple({ trigger: 'auto' });
+    } catch {
+      // status already persisted in syncFromApple
+    } finally {
+      scheduleAppleAutoSync();
+    }
+  }, delay);
+}
+
+function refreshAppleAutoSync() {
+  scheduleAppleAutoSync();
+}
+
+async function syncFromApple({
+  daysBefore,
+  daysAfter,
+  timeoutMs,
+  trigger = 'manual',
+} = {}) {
+  if (appleSyncInFlight) throw new Error('Apple sync already running.');
+  const state = loadState();
+  const appleSettings = state.settings?.apple || {};
+  const before = Number.isFinite(Number(daysBefore)) ? Number(daysBefore) : appleSettings.daysBefore;
+  const after = Number.isFinite(Number(daysAfter)) ? Number(daysAfter) : appleSettings.daysAfter;
+  const tm = Number.isFinite(Number(timeoutMs)) ? Number(timeoutMs) : appleSettings.timeoutSec * 1000;
   const escapedBefore = Math.max(0, Math.min(365, Math.floor(before)));
   const escapedAfter = Math.max(1, Math.min(365, Math.floor(after)));
-  const script = `
-set nowDate to (current date)
+  // Keep AppleScript minimal for locale compatibility.
+  const script = `set nowDate to (current date)
 set startDate to nowDate - (${escapedBefore} * days)
 set endDate to nowDate + (${escapedAfter} * days)
-set output to ""
 tell application "Calendar"
-  repeat with aCalendar in calendars
-    set calName to (name of aCalendar as text)
-    set allEvents to (every event of aCalendar whose start date is greater than startDate and start date is less than endDate)
-    repeat with anEvent in allEvents
-      set evtId to (id of anEvent as text)
-      set evtTitle to (summary of anEvent as text)
-      set evtStart to (start date of anEvent as «class isot»)
-      set evtEnd to (end date of anEvent as «class isot»)
-      set evtLocation to ""
-      try
-        set evtLocation to (location of anEvent as text)
-      end try
-      set evtDesc to ""
-      try
-        set evtDesc to (description of anEvent as text)
-      end try
-      set output to output & evtId & "\\t" & calName & "\\t" & evtTitle & "\\t" & evtStart & "\\t" & evtEnd & "\\t" & evtLocation & "\\t" & evtDesc & "\\n"
-    end repeat
-  end repeat
-end tell
+set output to ""
+repeat with aCalendar in calendars
+set calName to (name of aCalendar as text)
+set allEvents to (every event of aCalendar whose start date is greater than startDate and start date is less than endDate)
+repeat with anEvent in allEvents
+set evtTitle to (summary of anEvent as text)
+set evtStart to (start date of anEvent as string)
+set evtEnd to (end date of anEvent as string)
+set output to output & calName & "\\t" & evtTitle & "\\t" & evtStart & "\\t" & evtEnd & "\\n"
+end repeat
+end repeat
 return output
-`;
+end tell`;
 
-  const raw = await execAppleScript(script);
-  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const imported = [];
+  const perform = async () => {
+    const raw = await execAppleScript(script, { timeoutMs: Math.max(10000, Math.min(300000, tm || DEFAULT_APPLE_SYNC_TIMEOUT_MS)) });
+    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const imported = [];
 
-  for (const line of lines) {
-    const [sourceId, calendarName, title, start, end, location, description] = line.split('\t');
-    if (!sourceId || !title || !start || !end) continue;
-    const startIso = normalizeDate(start);
-    const endIso = normalizeDate(end);
-    if (!startIso || !endIso) continue;
-    imported.push({
-      id: `apple_${sourceId}`,
-      source: 'apple-calendar',
-      sourceId: sourceId,
-      title,
-      start: startIso,
-      end: endIso,
-      location: location || '',
-      description: description || '',
-      owner: 'user',
-      participants: calendarName ? [calendarName] : [],
-      editableBy: { user: true, golem: true },
-    });
+    for (const line of lines) {
+      const [calendarName, title, startRaw, endRaw] = line.split('\t');
+      if (!title || !startRaw || !endRaw) continue;
+      const startIso = normalizeDate(startRaw);
+      const endIso = normalizeDate(endRaw);
+      if (!startIso || !endIso) continue;
+      const sourceId = crypto.createHash('sha1')
+        .update(`${calendarName || ''}|${title}|${startIso}|${endIso}`)
+        .digest('hex');
+      imported.push({
+        id: `apple_${sourceId}`,
+        source: 'apple-calendar',
+        sourceId,
+        title,
+        start: startIso,
+        end: endIso,
+        location: '',
+        description: '',
+        owner: 'user',
+        participants: calendarName ? [calendarName] : [],
+        editableBy: { user: true, golem: true },
+      });
+    }
+
+    const result = importFromJson({ events: imported });
+    return { ...result, importedFromApple: imported.length };
+  };
+
+  appleSyncInFlight = perform();
+  try {
+    const result = await appleSyncInFlight;
+    const okState = loadState();
+    okState.settings.apple.lastSyncAt = new Date().toISOString();
+    okState.settings.apple.lastSyncStatus = 'success';
+    okState.settings.apple.lastSyncMessage = trigger === 'auto'
+      ? `Apple 自動同步成功，匯入 ${result.importedFromApple} 筆。`
+      : `Apple 同步成功，匯入 ${result.importedFromApple} 筆。`;
+    okState.settings.apple.nextSyncAt = computeNextAppleSyncAt(okState.settings.apple, new Date());
+    saveState(okState);
+    return result;
+  } catch (error) {
+    const failState = loadState();
+    failState.settings.apple.lastSyncAt = new Date().toISOString();
+    failState.settings.apple.lastSyncStatus = 'failed';
+    failState.settings.apple.lastSyncMessage = error instanceof Error ? error.message : String(error);
+    failState.settings.apple.nextSyncAt = computeNextAppleSyncAt(failState.settings.apple, new Date());
+    saveState(failState);
+    throw error;
+  } finally {
+    appleSyncInFlight = null;
   }
-
-  const result = importFromJson({ events: imported });
-  return { ...result, importedFromApple: imported.length };
 }
+
+refreshAppleAutoSync();
 
 module.exports = {
   listEvents,
@@ -712,6 +871,7 @@ module.exports = {
   importFromIcs,
   syncFromGoogle,
   syncFromApple,
+  refreshAppleAutoSync,
   checkDueReminders,
   // Google OAuth2
   buildAuthUrl,

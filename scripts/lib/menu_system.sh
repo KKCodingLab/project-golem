@@ -45,6 +45,7 @@ show_menu() {
     show_menu_tools # Call the new function for the tools header
     
     options+=("Doctor|🏥 深度系統診斷 (Run Diagnostics)")
+    options+=("RebuildDash|🧱 重建 Dashboard (Clean + Build)")
     options+=("Clean|🧹 清除依賴 (Clean node_modules)")
     options+=("Init|🧨 完全初始化系統 (Factory Reset - ${RED}DANGER${NC})")
     options+=("Quit|🚪 退出介面 (Exit)")
@@ -67,6 +68,7 @@ show_menu() {
         "DesktopStatus") headless_status_local_desktop; echo ""; read -r -p "  按 Enter 返回主選單..."; show_menu ;;
         "HeadlessStop") headless_one_click_stop; echo ""; read -r -p "  按 Enter 返回主選單..."; show_menu ;;
         "Doctor")  run_health_check; echo ""; read -r -p "  按 Enter 返回主選單..."; show_menu ;;
+        "RebuildDash") run_rebuild_dashboard; echo ""; read -r -p "  按 Enter 返回主選單..."; show_menu ;;
         "Clean")   run_clean_dependencies; show_menu ;;
         "Init")    run_clean_init; show_menu ;;
         "Quit")    echo -e "  ${GREEN}👋 關閉連線，再見！${NC}"; exit 0 ;;

@@ -41,6 +41,19 @@ type CalendarSettings = {
     lastSyncStatus?: string | null;
     lastSyncMessage?: string;
   };
+  apple: {
+    enabled: boolean;
+    mode: "daily" | "interval";
+    dailyTimes: string[];
+    intervalMinutes: number;
+    daysBefore: number;
+    daysAfter: number;
+    timeoutSec: number;
+    nextSyncAt?: string | null;
+    lastSyncAt?: string | null;
+    lastSyncStatus?: string | null;
+    lastSyncMessage?: string;
+  };
 };
 
 type OAuthStatus = {
@@ -74,8 +87,26 @@ const OWNER_COLORS_LIGHT: Record<Owner, string> = {
 
 function toLocalInputValue(iso: string) {
   const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function normalizeOwnerValue(owner: unknown): Owner {
+  return String(owner || "").toLowerCase() === "golem" ? "golem" : "user";
+}
+
+function normalizeEventForUI(event: CalendarEvent): CalendarEvent {
+  return {
+    ...event,
+    owner: normalizeOwnerValue(event.owner),
+    start: typeof event.start === "string" ? event.start : "",
+    end: typeof event.end === "string" ? event.end : "",
+    editableBy: {
+      user: event.editableBy?.user !== false,
+      golem: event.editableBy?.golem !== false,
+    },
+  };
 }
 
 function startOfWeek(date: Date): Date {
@@ -142,14 +173,14 @@ function EventChip({
     <div
       draggable
       onDragStart={(e) => onDragStart(e, event)}
-      onClick={() => onEdit(event)}
+      onClick={(e) => { e.stopPropagation(); onEdit(event); }}
       className={`group relative rounded border px-1.5 py-0.5 text-xs cursor-pointer select-none truncate transition-opacity hover:opacity-90 ${colorClass}`}
       title={`${event.title}\n${formatTime(event.start)} – ${formatTime(event.end)}`}
     >
       <span className="font-medium truncate">{compact ? event.title : `${formatTime(event.start)} ${event.title}`}</span>
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(event.id); }}
-        className="absolute right-0.5 top-0.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded bg-black/30 hover:bg-black/50"
+        className="absolute right-0.5 top-0.5 hidden group-hover:flex items-center justify-center w-4 h-4 rounded bg-black/30 hover:bg-black/50 z-10"
       >
         <X className="w-2.5 h-2.5" />
       </button>
@@ -635,8 +666,93 @@ function SettingsPanel({
         {/* Apple */}
         <section className="space-y-2">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Apple Calendar（macOS）</h3>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!settings?.apple?.enabled}
+              onChange={(e) => onSettingsChange({ apple: { ...settings!.apple, enabled: e.target.checked } })}
+            />
+            啟用 Apple 自動同步
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={(settings?.apple?.mode || "daily") === "daily"}
+                onChange={() => onSettingsChange({ apple: { ...settings!.apple, mode: "daily" } })}
+              />
+              每日定時
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={settings?.apple?.mode === "interval"}
+                onChange={() => onSettingsChange({ apple: { ...settings!.apple, mode: "interval" } })}
+              />
+              固定頻率
+            </label>
+          </div>
+          {(settings?.apple?.mode || "daily") === "daily" ? (
+            <input
+              className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              placeholder="每日時間（例如 09:00,18:30）"
+              value={(settings?.apple?.dailyTimes || ["09:00"]).join(",")}
+              onChange={(e) => onSettingsChange({
+                apple: {
+                  ...settings!.apple,
+                  dailyTimes: e.target.value.split(",").map((v) => v.trim()).filter(Boolean),
+                },
+              })}
+            />
+          ) : (
+            <input
+              type="number"
+              min={15}
+              max={1440}
+              className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              placeholder="每幾分鐘同步一次"
+              value={settings?.apple?.intervalMinutes ?? 120}
+              onChange={(e) => onSettingsChange({
+                apple: { ...settings!.apple, intervalMinutes: Number(e.target.value || 120) },
+              })}
+            />
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <input
+              type="number"
+              min={0}
+              max={365}
+              className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              placeholder="往前天數"
+              value={settings?.apple?.daysBefore ?? 30}
+              onChange={(e) => onSettingsChange({ apple: { ...settings!.apple, daysBefore: Number(e.target.value || 30) } })}
+            />
+            <input
+              type="number"
+              min={1}
+              max={365}
+              className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              placeholder="往後天數"
+              value={settings?.apple?.daysAfter ?? 180}
+              onChange={(e) => onSettingsChange({ apple: { ...settings!.apple, daysAfter: Number(e.target.value || 180) } })}
+            />
+            <input
+              type="number"
+              min={10}
+              max={300}
+              className="w-full rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              placeholder="逾時秒數"
+              value={settings?.apple?.timeoutSec ?? 60}
+              onChange={(e) => onSettingsChange({ apple: { ...settings!.apple, timeoutSec: Number(e.target.value || 60) } })}
+            />
+          </div>
+          <div className="text-xs text-muted-foreground space-y-1">
+            {settings?.apple?.lastSyncAt && <p>上次同步：{new Date(settings.apple.lastSyncAt).toLocaleString("zh-TW")}</p>}
+            {settings?.apple?.nextSyncAt && <p>下次同步：{new Date(settings.apple.nextSyncAt).toLocaleString("zh-TW")}</p>}
+            {settings?.apple?.lastSyncMessage && <p>狀態：{settings.apple.lastSyncMessage}</p>}
+          </div>
           <Button variant="secondary" onClick={onSyncApple} disabled={isSaving} className="w-full">
-            <RefreshCcw className="w-4 h-4" /> 從 Apple Calendar 匯入
+            <RefreshCcw className="w-4 h-4" /> 立即同步 Apple Calendar
           </Button>
         </section>
 
@@ -711,7 +827,7 @@ export default function CalendarPage() {
         apiGet<{ settings: CalendarSettings }>("/api/calendar/settings"),
         apiGet<OAuthStatus>("/api/calendar/google/oauth/status").catch(() => null),
       ]);
-      setEvents(eventsData.events || []);
+      setEvents((eventsData.events || []).map(normalizeEventForUI));
       setSettings(settingsData.settings);
       if (oauthData) setOauthStatus(oauthData);
     } catch (error) {
@@ -757,15 +873,16 @@ export default function CalendarPage() {
   }, []);
 
   const openEditEvent = useCallback((event: CalendarEvent) => {
-    setEditingId(event.id);
+    const normalized = normalizeEventForUI(event);
+    setEditingId(normalized.id);
     setForm({
-      title: event.title,
-      description: event.description || "",
-      location: event.location || "",
-      start: toLocalInputValue(event.start),
-      end: toLocalInputValue(event.end),
-      owner: event.owner,
-      allDay: event.allDay || false,
+      title: normalized.title,
+      description: normalized.description || "",
+      location: normalized.location || "",
+      start: toLocalInputValue(normalized.start),
+      end: toLocalInputValue(normalized.end),
+      owner: normalized.owner,
+      allDay: normalized.allDay || false,
     });
     setShowModal(true);
   }, []);
@@ -895,7 +1012,11 @@ export default function CalendarPage() {
   const syncApple = useCallback(async () => {
     try {
       setIsSaving(true);
-      await apiPostWrite("/api/calendar/apple/sync", { daysBefore: 30, daysAfter: 180 });
+      await apiPostWrite("/api/calendar/apple/sync", {
+        daysBefore: settings?.apple?.daysBefore ?? 30,
+        daysAfter: settings?.apple?.daysAfter ?? 180,
+        timeoutMs: (settings?.apple?.timeoutSec ?? 60) * 1000,
+      });
       await load();
       toast.success("Apple 行事曆同步完成");
     } catch (error) {
@@ -903,7 +1024,7 @@ export default function CalendarPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [load, toast]);
+  }, [load, settings, toast]);
 
   const saveSettings = useCallback(async () => {
     if (!settings) return;

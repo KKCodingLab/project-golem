@@ -42,6 +42,7 @@ export default function SystemUpdateSection() {
     const [keepMemory, setKeepMemory] = useState(true);
     const [updateDone, setUpdateDone] = useState(false);
     const socketRef = useRef<Socket | null>(null);
+    const updateStartLockRef = useRef(false);
 
     const updateInfoQuery = useQuery<UpdateInfo>(() => apiGet<UpdateInfo>("/api/system/update/check"), []);
     const logInfoQuery = useQuery<LogInfoResponse>(() => apiGet<LogInfoResponse>("/api/system/log-info"), []);
@@ -63,6 +64,8 @@ export default function SystemUpdateSection() {
     })();
 
     const handleStartUpdate = async () => {
+        if (isUpdating || updateStartLockRef.current) return;
+        updateStartLockRef.current = true;
         setIsUpdating(true);
         setProgress(0);
         setStatusText(t("settings.update.status.connecting"));
@@ -87,11 +90,13 @@ export default function SystemUpdateSection() {
                 setProgress(100);
                 setUpdateDone(true);
                 setIsUpdating(false);
+                updateStartLockRef.current = false;
                 socket.disconnect();
                 socketRef.current = null;
             } else if (data.status === "error") {
                 setStatusText(data.message ?? "");
                 setIsUpdating(false);
+                updateStartLockRef.current = false;
                 socket.disconnect();
                 socketRef.current = null;
             }
@@ -104,6 +109,7 @@ export default function SystemUpdateSection() {
                 setStatusText(t("settings.update.status.startFailed"));
                 toast.error(t("settings.update.toast.startFailedTitle"), t("settings.update.toast.startFailedBody"));
                 setIsUpdating(false);
+                updateStartLockRef.current = false;
                 socket.disconnect();
                 socketRef.current = null;
             }
