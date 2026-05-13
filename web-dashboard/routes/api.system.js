@@ -507,15 +507,32 @@ module.exports = function registerSystemRoutes(server) {
         console.log('⛔ [WebServer] Received shutdown request. Stopping system...');
         res.json({ success: true, message: 'System is shutting down... Please restart manually if needed.' });
 
-        if (typeof global.fullShutdown === 'function') {
-            setTimeout(() => {
+        setTimeout(async () => {
+            const contextIds = Array.from(server.contexts.keys());
+            if (typeof global.stopGolem === 'function' && contextIds.length > 0) {
+                console.log(`🧹 [System] Pre-shutdown stop for ${contextIds.length} context(s)...`);
+                for (const id of contextIds) {
+                    try {
+                        await global.stopGolem(id);
+                        if (typeof server.removeContext === 'function') {
+                            server.removeContext(id);
+                        } else {
+                            server.contexts.delete(id);
+                        }
+                    } catch (stopErr) {
+                        console.warn(`⚠️ [System] Failed to stop golem ${id} before shutdown: ${stopErr.message}`);
+                    }
+                }
+            }
+
+            if (typeof global.fullShutdown === 'function') {
                 global.fullShutdown().catch((err) => {
                     console.error('❌ [System] Shutdown error:', err);
                 });
-            }, 1000);
-        } else {
-            console.warn('⚠️ [System] global.fullShutdown not found, skipping forced process exit');
-        }
+            } else {
+                console.warn('⚠️ [System] global.fullShutdown not found, skipping forced process exit');
+            }
+        }, 1000);
     });
 
     router.get('/api/system/security/events', (req, res) => {

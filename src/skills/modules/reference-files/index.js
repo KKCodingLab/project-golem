@@ -3,10 +3,10 @@ const ReferenceFileService = require('../../../services/ReferenceFileService');
 const PROMPT = `【已載入技能：REFERENCE_FILES】
 用途：查詢全域「代理人參考文件」庫。當使用者提到參考文件、指定檔名/路徑，或你需要更多背景資料時，請主動使用此技能。
 Action 格式：
-- 列出文件：{"action":"reference_files","task":"list"}
-- 搜尋文件：{"action":"reference_files","task":"search","query":"關鍵字或問題","limit":5}
-- 讀取文件：{"action":"reference_files","task":"read","id":"ref_xxx","maxChars":12000}
-- 重新索引：{"action":"reference_files","task":"reindex","id":"ref_xxx"}
+- 列出文件：{"action":"reference-files","args":{"task":"list"}}
+- 搜尋文件：{"action":"reference-files","args":{"task":"search","query":"關鍵字或問題","limit":5}}
+- 讀取文件：{"action":"reference-files","args":{"task":"read","id":"ref_xxx","maxChars":12000}}
+- 重新索引：{"action":"reference-files","args":{"task":"reindex","id":"ref_xxx"}}
 原則：若自動注入的【相關參考文件】不足以回答，請先 search 或 read，再根據技能回報回答使用者。`;
 
 function formatFile(file) {
@@ -31,7 +31,7 @@ async function run(ctx) {
 
     if (task === 'search') {
         const query = String(args.query || args.q || '').trim();
-        if (!query) return '請提供 query 參數，例如 {"action":"reference_files","task":"search","query":"合約條款"}';
+        if (!query) return '請提供 query 參數，例如 {"action":"reference-files","args":{"task":"search","query":"合約條款"}}';
         const results = ReferenceFileService.search(query, { limit: Number(args.limit || 5) });
         if (results.length === 0) return `找不到與「${query}」相關的參考文件片段。`;
         return results.map((result, index) => [
@@ -45,7 +45,7 @@ async function run(ctx) {
 
     if (task === 'read') {
         const id = String(args.id || args.fileId || args.file_id || '').trim();
-        if (!id) return '請提供 id 參數，例如 {"action":"reference_files","task":"read","id":"ref_xxx"}';
+        if (!id) return '請提供 id 參數，例如 {"action":"reference-files","args":{"task":"read","id":"ref_xxx"}}';
         const file = ReferenceFileService.read(id, { maxChars: Number(args.maxChars || args.max_chars || 12000) });
         if (!file) return `找不到參考文件：${id}`;
         return [

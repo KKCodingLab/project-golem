@@ -3,6 +3,7 @@ const SkillPackageRegistry = require('./SkillPackageRegistry');
 const { toolsetManager, SCENE_TOOLSETS } = require('./ToolsetManager');
 
 const BUILTIN_ACTIONS = new Set(['command', 'mcp_call', 'multi_agent']);
+const DEPRECATED_SCHEDULE_ACTIONS = new Set(['schedule', 'list-schedules']);
 
 function normalizeActionName(value) {
     return String(value || '')
@@ -116,6 +117,14 @@ class ActionExecutionGate {
 
         if (BUILTIN_ACTIONS.has(normalizedAction)) {
             return { ok: true, lane: 'framework', normalizedAction };
+        }
+
+        if (DEPRECATED_SCHEDULE_ACTIONS.has(normalizedAction)) {
+            return {
+                ok: false,
+                code: 'UNKNOWN_ACTION',
+                error: `Action "${normalizedAction}" has been deprecated. Please use "collab-calendar" instead. Example: {"action":"collab-calendar","args":{"action":"add","title":"明天 10:00 團隊同步","start":"2026-05-14T10:00:00+08:00","end":"2026-05-14T10:30:00+08:00"}}`,
+            };
         }
 
         const skill = findSkillByAction(normalizedAction);

@@ -293,22 +293,6 @@ class NeuroShunter {
             for (const originalAct of parsed.actions) {
                 let act = originalAct;
 
-                const slashRecovered = this._tryRecoverSlashAction(act);
-                if (slashRecovered && slashRecovered.action) {
-                    act = slashRecovered.action;
-                    if (!shouldSuppressReply) await ctx.reply(slashRecovered.note);
-                }
-
-                const mcpRecovered = this._tryRecoverAsMcpCall(act);
-                if (mcpRecovered && mcpRecovered.ambiguous) {
-                    if (!shouldSuppressReply) await ctx.reply(mcpRecovered.note);
-                    continue;
-                }
-                if (mcpRecovered && mcpRecovered.action) {
-                    act = mcpRecovered.action;
-                    if (!shouldSuppressReply) await ctx.reply(mcpRecovered.note);
-                }
-
                 const gate = ActionExecutionGate.validate(act);
                 if (!gate.ok) {
                     rejectedActions.push({ action: act, error: gate.error, code: gate.code });
@@ -320,6 +304,9 @@ class NeuroShunter {
                 switch (act.action) {
                     case 'multi_agent':
                         await MultiAgentHandler.execute(ctx, act, controller, brain);
+                        break;
+                    case 'command':
+                        normalActions.push(act);
                         break;
                     default:
                         // 檢查是否為動態擴充技能
@@ -373,16 +360,28 @@ class NeuroShunter {
                 const observationText = observationLines.join('\n');
 
                 // 透過 convoManager 注入 [System Observation]（讓 Golem 的下一輪能看到）
-                if (allowActions && controller && controller.convoManager) {
+                // 即使 allowActions=false，也應回灌給 Golem 讓其知道哪裡被擋；僅禁止再自動執行 action。
+                if (controller && controller.convoManager) {
                     await controller.convoManager.enqueue(ctx, observationText, {
                         isPriority: true,
                         bypassDebounce: true,
                         isSystemFeedback: true,
-                        suppressReply: false,
-                        allowActions: true,
+                        suppressReply: true,
+                        allowActions: allowActions === true,
                         actionDepth: actionDepth + 1,
                         maxActionDepth,
                     });
+                } else if (brain && typeof brain.sendMessage === 'function') {
+                    try {
+                        await brain.sendMessage(observationText, false, {
+                            isSystemFeedback: true,
+                            allowActions: false,
+                            disableToolRouting: true,
+                            suppressReply: true,
+                        });
+                    } catch (injectErr) {
+                        console.warn(`[ActionGate] Failed to inject fallback observation to brain: ${injectErr.message}`);
+                    }
                 } else if (!shouldSuppressReply) {
                     // fallback：直接 reply 給使用者（不走 feedback loop）
                     const firstUnknown = rejectedActions.find((item) => item.code === 'UNKNOWN_ACTION');

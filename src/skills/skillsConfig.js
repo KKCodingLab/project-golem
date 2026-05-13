@@ -25,6 +25,7 @@ const MANDATORY_SKILLS = [
     'session-search',  // 🔍 Hermes-inspired: 歷史對話語意搜尋
     'reference-files',
     'stock-dashboard',
+    'collab-calendar',
 ];
 
 const OPTIONAL_SKILLS = [
@@ -33,11 +34,6 @@ const OPTIONAL_SKILLS = [
     'moltbot',
     'spotify',
     'youtube',
-    // ── 協作日曆 ──────────────────────────────────────────────
-    'collab-calendar',  // 📅 使用者與 Golem 共用行事曆
-    // ── 排程 ──────────────────────────────────────────────────
-    'schedule',         // ⏰ 建立排程提醒
-    'list-schedules',   // 📋 列出排程清單
     // ── 其他選用技能 ──────────────────────────────────────────
     'apple-calendar',   // 🍎 macOS Apple Calendar 整合（僅 macOS）
     'delegate-task',    // 🤝 任務委派

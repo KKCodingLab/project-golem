@@ -12,7 +12,7 @@
 
 ### 1. 關鍵字搜尋（快速，預設）
 ```json
-{"action": "session_search", "query": "搜尋關鍵字", "mode": "keyword", "days": 30}
+{"action":"session-search","args":{"query":"搜尋關鍵字","mode":"keyword","days":30}}
 ```
 - `query`：必填，搜尋字串
 - `days`：搜尋範圍（天數，預設 30，最大 365）
@@ -20,13 +20,13 @@
 
 ### 2. 語意搜尋（慢，較精準）
 ```json
-{"action": "session_search", "query": "我問過關於記憶系統的問題", "mode": "semantic", "days": 60}
+{"action":"session-search","args":{"query":"我問過關於記憶系統的問題","mode":"semantic","days":60}}
 ```
 - 適合模糊描述、需要 AI 理解意圖時
 
 ### 3. 日期範圍搜尋
 ```json
-{"action": "session_search", "mode": "date", "start_date": "20260401", "end_date": "20260417"}
+{"action":"session-search","args":{"mode":"date","start_date":"20260401","end_date":"20260417"}}
 ```
 - `start_date`/`end_date`：格式 YYYYMMDD
 

@@ -7,14 +7,14 @@
    - 當你需要回溯過去的決策或對話脈絡，且長期記憶 (Memory) 不足以覆蓋所有細節時。
 
 2. **操作方式**：
-   - 請在 `[GOLEM_ACTION]` 區塊中輸出 `log_read` 指令。
+   - 請在 `[GOLEM_ACTION]` 區塊中輸出 `log-reader` 指令。
    - `task` 參數可為：
      - `list`: 列出目前現有的所有每日摘要日期。
      - `get`: 讀取特定日期的摘要內容。需搭配 `date` 參數 (YYYYMMDD)。
 
 3. **指令格式範例**：
-   - 列出列表：`{"action": "log_read", "task": "list"}`
-   - 讀取特定日期：`{"action": "log_read", "task": "get", "date": "20260227"}`
+   - 列出列表：`{"action": "log-reader", "args": {"task": "list"}}`
+   - 讀取特定日期：`{"action": "log-reader", "args": {"task": "get", "date": "20260227"}}`
 
 4. **輸出效果**：
    - `list`: 回傳現有摘要的日期列表。

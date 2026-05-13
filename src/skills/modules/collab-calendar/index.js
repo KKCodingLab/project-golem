@@ -24,6 +24,15 @@ async function run(ctx) {
     //   1. {"action": "collab-calendar", "args": {"action": "today"}}      ← 新格式
     //   2. {"action": "collab-calendar", "parameters": {"action": "today"}} ← 舊格式
     const args = ctx.args || ctx.parameters || {};
+    const hasMutationShape =
+        (args.title !== undefined || args.summary !== undefined || args.name !== undefined) &&
+        (args.start !== undefined || args.start_time !== undefined || args.startTime !== undefined) &&
+        (args.end !== undefined || args.end_time !== undefined || args.endTime !== undefined);
+    const hasExplicitAction = Boolean(args.action || args.action_type || args.type);
+    if (!hasExplicitAction && hasMutationShape) {
+        return `❌ 偵測到你在建立行程（有 title/start/end），但缺少 args.action。\n` +
+            `請改用：{"action":"collab-calendar","args":{"action":"add","title":"...","start":"2026-05-13T20:44:00+08:00","end":"2026-05-13T20:50:00+08:00"}}`;
+    }
     const rawAction = String(args.action || args.action_type || args.type || 'list').toLowerCase();
     const actionMap = {
         create: 'add',

@@ -85,6 +85,16 @@ module.exports = function registerReferenceFileRoutes(server) {
         }
     });
 
+    router.post('/api/reference-files/batch-delete', requireReferenceAdmin, (req, res) => {
+        try {
+            const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+            const result = ReferenceFileService.removeMany(ids);
+            return res.json({ success: true, ...result });
+        } catch (error) {
+            return handleError(res, error);
+        }
+    });
+
     router.get('/api/reference-files/search', (req, res) => {
         try {
             const query = String(req.query.query || '');

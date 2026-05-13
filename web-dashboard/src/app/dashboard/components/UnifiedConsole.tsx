@@ -313,6 +313,12 @@ export default function UnifiedConsole({
     const handleShutdown = async () => {
         setIsLoading(true);
         try {
+            const golemId = activeGolem || "golem_A";
+            try {
+                await apiPost("/api/golems/stop", { id: golemId });
+            } catch (stopError) {
+                console.warn("Pre-shutdown stop failed, continuing shutdown:", stopError);
+            }
             const data = await apiPost<{ success?: boolean }>("/api/system/shutdown");
             if (data.success) {
                 setConfirmDialog((prev) => ({ ...prev, open: false }));

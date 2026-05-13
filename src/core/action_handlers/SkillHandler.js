@@ -4,6 +4,16 @@ const MCPCallValidator = require('../../mcp/MCPCallValidator');
 const MCPToolCatalog = require('../../mcp/MCPToolCatalog');
 
 class SkillHandler {
+    static _resolveActionArgs(act = {}) {
+        if (!act || typeof act !== 'object') return {};
+        if (act.args && typeof act.args === 'object') return act.args;
+        if (act.parameters && typeof act.parameters === 'object') return act.parameters;
+        if (typeof act.parameter === 'string' && act.parameter.trim()) {
+            return { input: act.parameter.trim() };
+        }
+        return {};
+    }
+
     static _buildSkillActionExample(skillName, args = {}) {
         const safeName = String(skillName || '').trim() || 'wiki';
         const payload = { action: safeName, args: {} };
@@ -13,7 +23,28 @@ class SkillHandler {
             payload.args[key] = input[key];
         }
         if (Object.keys(payload.args).length === 0) {
-            payload.args = { input: '...' };
+            payload.args = safeName === 'collab-calendar'
+                ? {
+                    action: 'add',
+                    title: '喝水提醒',
+                    start: '2026-05-13T21:21:29+08:00',
+                    end: '2026-05-13T21:31:29+08:00'
+                }
+                : { input: '...' };
+        }
+        // collab-calendar 常見誤用：只給 title/start/end 卻漏掉 args.action，
+        // 這裡主動補成 add，避免範例再次誤導模型。
+        if (
+            safeName === 'collab-calendar' &&
+            !payload.args.action &&
+            (payload.args.title || payload.args.summary || payload.args.name) &&
+            (payload.args.start || payload.args.start_time || payload.args.startTime) &&
+            (payload.args.end || payload.args.end_time || payload.args.endTime)
+        ) {
+            payload.args.action = 'add';
+        }
+        if (safeName === 'collab-calendar' && !payload.args.action) {
+            payload.args.action = 'list';
         }
         return JSON.stringify(payload, null, 2);
     }
@@ -23,6 +54,11 @@ class SkillHandler {
             ? `\n正確指令範例：\n${exampleText}`
             : '';
         return `\n\n[Execution Check Reminder]\n請檢查是否成功執行；若未成功，請勿直接 reply 使用者，請先改用正確指令重試一次。${exampleBlock}`;
+    }
+
+    static _looksLikeFailure(resultText = '') {
+        const text = String(resultText || '');
+        return /❌|錯誤|失敗|不支援|找不到|missing|required|invalid/i.test(text);
     }
 
     static async _buildNavigateFollowupHint(mcpManager, serverName) {
@@ -102,13 +138,19 @@ class SkillHandler {
         const sendFeedback = async (message, hintMeta = {}) => {
             const reminder = SkillHandler._buildPostCheckHint(hintMeta.exampleText || '');
             const fullMessage = `${message}${reminder}`;
+            const allowActionRetry = hintMeta.allowActions === true;
+            const requireConsentForNextRetry = hintMeta.requireConsent === true;
+            const actionRule = allowActionRetry
+                ? `- 你可以輸出一次 [GOLEM_ACTION] 做修正重試（僅一次）。\n- 重試後請再用 [GOLEM_REPLY] 回報最終結果。`
+                : requireConsentForNextRetry
+                    ? `- 禁止輸出 [GOLEM_ACTION]。\n- 你必須先用 [GOLEM_REPLY] 明確詢問使用者是否同意你再執行一次（例如：是否同意我再重試一次？）。\n- 在使用者回覆同意前，停止自動執行。`
+                    : `- 禁止輸出 [GOLEM_ACTION]。\n- 如果你認為必須繼續使用工具，請先說明原因並等待使用者確認。`;
             const feedbackPrompt = `[System Observation]\n` +
                 `以下是上一個工具、技能或 MCP 呼叫的執行結果。\n\n` +
                 `限制：\n` +
                 `- 你現在處於 observation_summary 模式。\n` +
                 `- 請只使用 [GOLEM_REPLY] 整理結果給使用者。\n` +
-                `- 禁止輸出 [GOLEM_ACTION]。\n` +
-                `- 如果你認為必須繼續使用工具，請先說明原因並等待使用者確認。\n\n` +
+                `${actionRule}\n\n` +
                 `工具結果：\n${fullMessage}`;
             if (convoManager) {
                 const isAuto = process.env.GOLEM_AUTO_APPROVE_ALL === 'true';
@@ -117,7 +159,7 @@ class SkillHandler {
                     isPriority: true, 
                     bypassDebounce: true,
                     isSystemFeedback: true,
-                    allowActions: false,
+                    allowActions: allowActionRetry,
                     actionDepth: Number(dispatchOptions.actionDepth || 0) + 1,
                     maxActionDepth: Number(dispatchOptions.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
                     suppressReply: isAuto && isSilent
@@ -212,7 +254,7 @@ class SkillHandler {
             try {
                 // act.args 是技能的實際參數（內層），act 本身是 action 物件（外層）
                 // 優先使用 act.args，若無則 fallback 到 act.parameters，最後才是整個 act
-                const skillArgs = act.args || act.parameters || act;
+                const skillArgs = SkillHandler._resolveActionArgs(act);
                 const result = await dynamicSkill.run({
                     page: brain.page,
                     browser: brain.browser,
@@ -222,21 +264,25 @@ class SkillHandler {
                     args: skillArgs
                 });
                 if (result) {
-                    console.log(`[Skill] ✅ ${dynamicSkill.name} 完成 (${String(result).length} chars)`);
+                    const resultText = String(result);
+                    console.log(`[Skill] ✅ ${dynamicSkill.name} 完成 (${resultText.length} chars)`);
                     await ctx.reply(`✅ 技能「${dynamicSkill.name}」已完成，正在整理結果...`);
                     await sendFeedback(`[Skill Result - ${dynamicSkill.name}]\n${String(result)}`, {
-                        exampleText: SkillHandler._buildSkillActionExample(dynamicSkill.name, act.args || act.parameters || {})
+                        exampleText: SkillHandler._buildSkillActionExample(dynamicSkill.name, skillArgs),
+                        allowActions: SkillHandler._looksLikeFailure(resultText) && Number(dispatchOptions.actionDepth || 0) < 1,
+                        requireConsent: SkillHandler._looksLikeFailure(resultText) && Number(dispatchOptions.actionDepth || 0) >= 1
                     });
                 } else {
                     console.log(`[Skill] ✅ ${dynamicSkill.name} 完成 (無回傳值)`);
                     await sendFeedback(`[Skill Result - ${dynamicSkill.name}]\n(無回傳值)`, {
-                        exampleText: SkillHandler._buildSkillActionExample(dynamicSkill.name, act.args || act.parameters || {})
+                        exampleText: SkillHandler._buildSkillActionExample(dynamicSkill.name, skillArgs)
                     });
                 }
             } catch (e) {
                 await ctx.reply(`❌ 技能執行錯誤: ${e.message}`);
                 await sendFeedback(`[Skill Error - ${dynamicSkill.name}]\n${e.message}`, {
-                    exampleText: SkillHandler._buildSkillActionExample(dynamicSkill.name, act.args || act.parameters || {})
+                    exampleText: SkillHandler._buildSkillActionExample(dynamicSkill.name, SkillHandler._resolveActionArgs(act)),
+                    allowActions: true
                 });
             }
             return true; // Indicates the skill was handled
@@ -244,7 +290,7 @@ class SkillHandler {
         const notFoundHelp = SkillHandler._buildSkillNotFoundHelp(skillName);
         await ctx.reply(notFoundHelp);
         await sendFeedback(`[Skill Error]\n${notFoundHelp}`, {
-            exampleText: SkillHandler._buildSkillActionExample(skillName, act.args || act.parameters || {})
+            exampleText: SkillHandler._buildSkillActionExample(skillName, SkillHandler._resolveActionArgs(act))
         });
         return true;
     }

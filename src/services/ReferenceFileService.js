@@ -51,6 +51,11 @@ function expandHome(inputPath) {
 function normalizePath(inputPath) {
     const raw = expandHome(inputPath);
     if (!raw) return '';
+    // If a Windows drive path is provided on non-Windows hosts, keep it as-is
+    // so we can surface a clear "path not accessible on this host" error.
+    if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(raw)) {
+        return raw;
+    }
     return path.resolve(raw);
 }
 
@@ -257,6 +262,11 @@ class ReferenceFileService {
 
     _collectFiles(targetPath, maxFiles = 300) {
         const root = normalizePath(targetPath);
+        if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(root)) {
+            const error = new Error(`Windows path is not accessible on current host (${process.platform}): ${root}`);
+            error.statusCode = 400;
+            throw error;
+        }
         const st = safeStat(root);
         if (!st) {
             const error = new Error('Path does not exist.');
@@ -352,6 +362,23 @@ class ReferenceFileService {
         index.chunks = index.chunks.filter((chunk) => chunk.fileId !== id);
         this._writeIndex(index);
         return before !== registry.files.length;
+    }
+
+    removeMany(ids = []) {
+        const uniqueIds = Array.from(new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean)));
+        if (uniqueIds.length === 0) return { removed: 0, missing: 0 };
+        const registry = this._readRegistry();
+        const before = registry.files.length;
+        const idSet = new Set(uniqueIds);
+        registry.files = registry.files.filter((item) => !idSet.has(item.id));
+        this._writeRegistry(registry);
+
+        const index = this._readIndex();
+        index.chunks = index.chunks.filter((chunk) => !idSet.has(chunk.fileId));
+        this._writeIndex(index);
+
+        const removed = before - registry.files.length;
+        return { removed, missing: Math.max(0, uniqueIds.length - removed) };
     }
 
     extractText(filePath) {

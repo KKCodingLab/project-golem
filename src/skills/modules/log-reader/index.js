@@ -31,7 +31,7 @@ async function run(ctx) {
             }
 
             const list = summaries.map(s => s.date_string).join(', ');
-            return `📅 現有摘要日期列表：\n${list}\n\n你可以使用 {"action": "log_read", "task": "get", "date": "日期"} 來讀取內容。`;
+            return `📅 現有摘要日期列表：\n${list}\n\n你可以使用 {"action":"log-reader","args":{"task":"get","date":"日期"}} 來讀取內容。`;
         }
 
         if (task === 'get') {

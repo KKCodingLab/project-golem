@@ -11,14 +11,13 @@
    - 系統會自動對接持久化資料庫 (Database) 進行存取。
 
 3. **JSON 格式與範例**：
-   - 📌 **新增排程 (Create)**：
+   - 📌 **新增行程 (Create)**：
      ```json
-     {"action": "schedule", "task": "提醒內容或執行指令", "time": "ISO8601格式時間"}
+     {"action":"collab-calendar","args":{"action":"add","title":"提醒喝水","start":"2026-05-14T14:00:00+08:00","end":"2026-05-14T14:10:00+08:00"}}
      ```
-   - 🔍 **查詢排程 (Read)**：
-     (🚨 嚴禁使用終端機指令讀取 chronos.js 原始碼，必須使用此專屬 action 呼叫資料庫)
+   - 🔍 **查詢行程 (Read)**：
      ```json
-     {"action": "list_schedules"}
+     {"action":"collab-calendar","args":{"action":"list"}}
      ```
 
 4. **計算時間**：
