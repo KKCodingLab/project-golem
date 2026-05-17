@@ -24,6 +24,8 @@ const EXCLUDED_FILES = new Set([
     '.DS_Store'
 ]);
 
+const SQLITE_TRANSIENT_FILE_RE = /(?:-shm|-wal|-journal)$/i;
+
 function shouldSkipEntry(name) {
     return EXCLUDED_DIRS.has(name) || EXCLUDED_FILES.has(name);
 }
@@ -56,6 +58,18 @@ function walkFiles(rootDir, relativeDir = '', files = [], skipped = []) {
 
 function toUnixPath(p) {
     return p.split(path.sep).join('/');
+}
+
+function isLikelyWindowsLockError(error) {
+    const code = String(error?.code || '').toUpperCase();
+    if (code === 'EPERM' || code === 'EACCES' || code === 'EBUSY' || code === 'UNKNOWN') return true;
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('resource busy') || message.includes('permission denied') || message.includes('being used by another process');
+}
+
+function isSqliteTransientPath(relPath) {
+    const normalized = String(relPath || '').replace(/\\/g, '/').toLowerCase();
+    return normalized.endsWith('-shm') || normalized.endsWith('-wal') || normalized.endsWith('-journal');
 }
 
 function sha256Hex(input) {
@@ -95,6 +109,10 @@ function collectSectionFromDir(sectionName, baseDir) {
         }
         if (stat.size > MAX_FILE_BYTES) {
             skipped.push({ path: toUnixPath(item.relPath), reason: `file_too_large:${stat.size}` });
+            continue;
+        }
+        if (isSqliteTransientPath(item.relPath) || SQLITE_TRANSIENT_FILE_RE.test(item.relPath)) {
+            skipped.push({ path: toUnixPath(item.relPath), reason: 'sqlite_transient_runtime_file' });
             continue;
         }
         if (totalBytes + stat.size > MAX_TOTAL_BYTES) {
@@ -140,21 +158,35 @@ function collectSingleFile(sectionName, filePath, relLabel) {
 }
 
 function restoreSection(targetRoot, files) {
-    if (!targetRoot) return { restored: 0 };
+    if (!targetRoot) return { restored: 0, skipped: [] };
     fs.mkdirSync(targetRoot, { recursive: true });
     let restored = 0;
+    const skipped = [];
     for (const file of files || []) {
         const relPath = String(file.path || '').replace(/^\/+/, '');
         if (!relPath || relPath.includes('..')) continue;
         const absPath = path.resolve(path.join(targetRoot, relPath));
         const rootResolved = path.resolve(targetRoot);
         if (!absPath.startsWith(`${rootResolved}${path.sep}`)) continue;
-        fs.mkdirSync(path.dirname(absPath), { recursive: true });
-        const content = Buffer.from(String(file.content || ''), 'base64');
-        fs.writeFileSync(absPath, content);
-        restored += 1;
+        try {
+            fs.mkdirSync(path.dirname(absPath), { recursive: true });
+            const content = Buffer.from(String(file.content || ''), 'base64');
+            fs.writeFileSync(absPath, content);
+            restored += 1;
+        } catch (error) {
+            const sqliteTransient = isSqliteTransientPath(relPath) || SQLITE_TRANSIENT_FILE_RE.test(relPath);
+            const lockLike = isLikelyWindowsLockError(error);
+            if (sqliteTransient || lockLike) {
+                skipped.push({
+                    path: toUnixPath(relPath),
+                    reason: sqliteTransient ? `sqlite_transient_or_locked:${error.code || 'UNKNOWN'}` : `write_locked:${error.code || 'UNKNOWN'}`
+                });
+                continue;
+            }
+            throw error;
+        }
     }
-    return { restored };
+    return { restored, skipped };
 }
 
 function normalizeSection(section) {
@@ -308,7 +340,7 @@ function previewRestoreBackupPayload(inputPayload) {
 function restoreBackupPayload(inputPayload, { memoryBaseDir, repoRoot }) {
     const { payload, migration } = validateAndMigrateBackupPayload(inputPayload);
     const sections = Array.isArray(payload.sections) ? payload.sections : [];
-    const summary = { restoredFiles: 0, sections: {} };
+    const summary = { restoredFiles: 0, sections: {}, skipped: [] };
 
     for (const section of sections) {
         if (!section || typeof section !== 'object') continue;
@@ -317,6 +349,9 @@ function restoreBackupPayload(inputPayload, { memoryBaseDir, repoRoot }) {
             const result = restoreSection(memoryBaseDir, section.files);
             summary.restoredFiles += result.restored;
             summary.sections.golem_memory = result.restored;
+            if (Array.isArray(result.skipped) && result.skipped.length) {
+                summary.skipped.push(...result.skipped.map((s) => ({ section: 'golem_memory', ...s })));
+            }
             continue;
         }
         if (name === 'collab_calendar') {
@@ -324,6 +359,9 @@ function restoreBackupPayload(inputPayload, { memoryBaseDir, repoRoot }) {
             const result = restoreSection(targetRoot, section.files?.map((f) => ({ ...f, path: 'collab-calendar.json' })));
             summary.restoredFiles += result.restored;
             summary.sections.collab_calendar = result.restored;
+            if (Array.isArray(result.skipped) && result.skipped.length) {
+                summary.skipped.push(...result.skipped.map((s) => ({ section: 'collab_calendar', ...s })));
+            }
             continue;
         }
         if (name === 'reference_files') {
@@ -331,6 +369,9 @@ function restoreBackupPayload(inputPayload, { memoryBaseDir, repoRoot }) {
             const result = restoreSection(targetRoot, section.files?.map((f) => ({ ...f, path: 'reference-files.json' })));
             summary.restoredFiles += result.restored;
             summary.sections.reference_files = result.restored;
+            if (Array.isArray(result.skipped) && result.skipped.length) {
+                summary.skipped.push(...result.skipped.map((s) => ({ section: 'reference_files', ...s })));
+            }
         }
     }
 
