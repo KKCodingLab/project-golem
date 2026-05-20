@@ -633,7 +633,48 @@ class GolemBrain {
             const startTag = ProtocolFormatter.buildStartTag(reqId);
             const endTag = ProtocolFormatter.buildEndTag(reqId);
             const routedText = await this._withToolRoutingHint(text, isSystem, options);
-            const payload = ProtocolFormatter.buildEnvelope(routedText, reqId, options);
+            let payloadText = routedText;
+            let payload = options.segmentAckOnly === true
+                ? ProtocolFormatter.buildSegmentAckEnvelope(payloadText, reqId)
+                : ProtocolFormatter.buildEnvelope(payloadText, reqId, options);
+            const maxEnvelopeChars = (() => {
+                const raw = Number(process.env.GOLEM_MAX_ENVELOPE_CHARS || 7000);
+                if (!Number.isFinite(raw)) return 7000;
+                return Math.min(Math.max(raw, 3000), 12000);
+            })();
+
+            if (
+                !isSystem &&
+                options._segmentedBypass !== true &&
+                options.disableAutoSegment !== true &&
+                payload.length > maxEnvelopeChars &&
+                payloadText !== text
+            ) {
+                // 先移除 routing hint 重建一次，優先避免進入分段路徑造成送出卡死。
+                payloadText = text;
+                payload = options.segmentAckOnly === true
+                    ? ProtocolFormatter.buildSegmentAckEnvelope(payloadText, reqId)
+                    : ProtocolFormatter.buildEnvelope(payloadText, reqId, options);
+                console.warn(
+                    `⚠️ [Brain] payload 過長 (${payload.length} chars)；先移除 routing hint 降載重試。`
+                );
+            }
+
+            if (
+                !isSystem &&
+                options._segmentedBypass !== true &&
+                options.disableAutoSegment !== true &&
+                payload.length > maxEnvelopeChars
+            ) {
+                console.warn(
+                    `⚠️ [Brain] payload 過長 (${payload.length} chars)；啟用保護性分段送出 (threshold=${maxEnvelopeChars}).`
+                );
+                return await this.sendMessageSegmented(payloadText, isSystem, {
+                    ...options,
+                    _segmentedBypass: true,
+                    maxSegmentChars: Number(process.env.GOLEM_SEGMENT_CHARS || 1400),
+                });
+            }
 
             console.log(`📡 [Brain] 發送訊號: ${reqId} (含每回合強制洗腦引擎)${attachment ? ' 📎 含有附件' : ''}`);
 
@@ -757,6 +798,12 @@ class GolemBrain {
         if (!text || typeof text !== 'string') return text;
         if (text.startsWith('<tool-routing>')) return text;
         if (/^\s*(<memory-context>|【系統補充|【系統技能庫初始化】|\[System Observation\])/i.test(text)) return text;
+        if (options.forceToolRouting !== true) {
+            const trimmed = text.trim();
+            const looksLikeCommand = /^\/|^GOLEM_SKILL::|```json|\"action\"\s*:|mcp_call|tool/i.test(trimmed);
+            // 一般短聊（例如「你有什麼能力」）不需要巨大 routing hint，避免 payload 過胖卡送出。
+            if (!looksLikeCommand && trimmed.length <= 80) return text;
+        }
 
         try {
             const toolsetContext = this._resolveToolsetContext();
@@ -775,15 +822,21 @@ class GolemBrain {
             } else {
                 hint = this.toolRouter.buildRoutingHint(text);
             }
-            if (!hint) return `${runtimeContext}\n\n${text}`;
-            return `${runtimeContext}\n\n${hint}\n\n${text}`;
+            const hintMaxChars = (() => {
+                const raw = Number(process.env.GOLEM_ROUTING_HINT_MAX_CHARS || 1800);
+                if (!Number.isFinite(raw)) return 1800;
+                return Math.min(Math.max(raw, 400), 4000);
+            })();
+            const safeHint = String(hint || '').slice(0, hintMaxChars);
+            if (!safeHint) return `${runtimeContext}\n\n${text}`;
+            return `${runtimeContext}\n\n${safeHint}\n\n${text}`;
         } catch (e) {
             console.warn(`[ToolRouter][${this.golemId}] routing hint failed: ${e.message}`);
             return text;
         }
     }
 
-    _splitTextIntoChunks(text, maxChars = 12000) {
+    _splitTextIntoChunks(text, maxChars = 1400) {
         const raw = String(text || '');
         if (raw.length <= maxChars) return [raw];
 
@@ -804,7 +857,10 @@ class GolemBrain {
     }
 
     async sendMessageSegmented(text, isSystem = false, options = {}) {
-        const maxSegmentChars = Number(options.maxSegmentChars || 12000);
+        const requested = Number(options.maxSegmentChars || process.env.GOLEM_SEGMENT_CHARS || 1400);
+        const maxSegmentChars = Number.isFinite(requested)
+            ? Math.min(Math.max(requested, 600), 4000)
+            : 1400;
         const chunks = this._splitTextIntoChunks(text, maxSegmentChars);
         const sessionId = ProtocolFormatter.generateReqId().replace('REQ-', 'SEG-');
         const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
@@ -833,9 +889,12 @@ class GolemBrain {
 
             let attempt = 0;
             while (attempt <= maxAckRetry) {
+                const isIntermediateSegment = i < chunks.length - 1;
                 lastResult = await this.sendMessage(segmentMessage, isSystem, {
                     ...options,
                     _segmentedBypass: true,
+                    segmentAckOnly: isIntermediateSegment,
+                    disableToolRouting: true,
                 });
                 // 非最後一段：必須收到 ACK 才允許下一段
                 if (i >= chunks.length - 1) break;
@@ -852,6 +911,11 @@ class GolemBrain {
                             });
                         } catch (_) { }
                     }
+                    // 給 Gemini UI 一點解鎖/穩定時間，避免 ACK 剛完成就立刻塞下一段導致送出鎖住。
+                    const segmentCooldownMs = Number.isFinite(Number(options.segmentCooldownMs))
+                        ? Math.max(100, Number(options.segmentCooldownMs))
+                        : 650;
+                    await new Promise(r => setTimeout(r, segmentCooldownMs));
                     break;
                 }
                 attempt += 1;
@@ -1395,10 +1459,15 @@ class GolemBrain {
             if (!onProgress) return;
             try { await onProgress(payload); } catch (_) { }
         };
+        const injectSegmentCooldownMs = (() => {
+            const raw = Number(process.env.GOLEM_SYSTEM_INJECT_SEGMENT_COOLDOWN_MS || 180);
+            if (!Number.isFinite(raw)) return 180;
+            return Math.min(Math.max(raw, 80), 1200);
+        })();
         const systemInjectSegmentChars = (() => {
-            const raw = Number(process.env.GOLEM_SYSTEM_INJECT_SEGMENT_CHARS || 8000);
-            if (!Number.isFinite(raw) || raw < 2000) return 8000;
-            return Math.min(raw, 12000);
+            const raw = Number(process.env.GOLEM_SYSTEM_INJECT_SEGMENT_CHARS || 2800);
+            if (!Number.isFinite(raw)) return 2800;
+            return Math.min(Math.max(raw, 1200), 5000);
         })();
         const toolsetContext = this._resolveToolsetContext();
         let { systemPrompt, skillMemoryText } = await ProtocolFormatter.buildSystemPrompt(forceRefresh, {
@@ -1422,6 +1491,7 @@ class GolemBrain {
                     await this.sendMessageSegmented(wikiContext, false, {
                         disableToolRouting: true,
                         maxSegmentChars: systemInjectSegmentChars,
+                        segmentCooldownMs: injectSegmentCooldownMs,
                         onProgress,
                     });
                 } else {
@@ -1451,6 +1521,7 @@ class GolemBrain {
                         await this.sendMessageSegmented(injectionText, false, {
                             disableToolRouting: true,
                             maxSegmentChars: systemInjectSegmentChars,
+                            segmentCooldownMs: injectSegmentCooldownMs,
                             onProgress,
                         });
                     } else {
@@ -1471,6 +1542,7 @@ class GolemBrain {
             await this.sendMessageSegmented(compressedPrompt, false, {
                 disableToolRouting: true,
                 maxSegmentChars: systemInjectSegmentChars,
+                segmentCooldownMs: injectSegmentCooldownMs,
                 onProgress,
             });
         } else {
