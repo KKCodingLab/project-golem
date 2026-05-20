@@ -4,7 +4,7 @@
   <p><strong>你的 AI 操作中樞：可對話、可行動、可記憶、可長期協作。</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-9.6.20-blue?style=for-the-badge" alt="version" />
+    <img src="https://img.shields.io/badge/version-9.6.21-blue?style=for-the-badge" alt="version" />
     <img src="https://img.shields.io/badge/node.js-20~22-3C873A?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="node" />
     <img src="https://img.shields.io/badge/backend-gemini%20web%20%7C%20ollama%20%7C%20lmstudio-orange?style=for-the-badge" alt="backend" />
     <img src="https://img.shields.io/badge/dashboard-next.js-black?style=for-the-badge&logo=nextdotjs" alt="dashboard" />
@@ -21,7 +21,7 @@
 
 ## Project Golem 是什麼
 
-Project Golem 不是單純聊天機器人，而是一套可運行的 AI 工作系統。  
+Project Golem 不是單純聊天機器人，而是一套可運行的 AI 工作系統。
 它把「語言模型能力」和「實際操作能力」整合成同一個執行核心，讓你可以在一個 Dashboard 裡完成：
 
 - 即時對話與任務協作
@@ -256,7 +256,7 @@ project-golem/
 
 ## 授權
 
-本專案採 **Source-Available Non-Commercial** 授權。  
+本專案採 **Source-Available Non-Commercial** 授權。
 請參考：[LICENSE](LICENSE) 與 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
 
 ---

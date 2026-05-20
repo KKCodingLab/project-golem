@@ -4,7 +4,7 @@
   <p><strong>Your AI operations hub: chat, act, remember, and collaborate over the long run.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-9.6.20-blue?style=for-the-badge" alt="version" />
+    <img src="https://img.shields.io/badge/version-9.6.21-blue?style=for-the-badge" alt="version" />
     <img src="https://img.shields.io/badge/node.js-20~22-3C873A?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="node" />
     <img src="https://img.shields.io/badge/backend-gemini%20web%20%7C%20ollama%20%7C%20lmstudio-orange?style=for-the-badge" alt="backend" />
     <img src="https://img.shields.io/badge/dashboard-next.js-black?style=for-the-badge&logo=nextdotjs" alt="dashboard" />
@@ -21,7 +21,7 @@
 
 ## What is Project Golem?
 
-Project Golem is not just a chatbot. It is an executable AI work system.  
+Project Golem is not just a chatbot. It is an executable AI work system.
 It combines language model intelligence with operational tooling so you can run real workflows from a single dashboard:
 
 - Live conversations and task collaboration
@@ -255,7 +255,7 @@ project-golem/
 
 ## License
 
-This project is distributed under a **Source-Available Non-Commercial** license.  
+This project is distributed under a **Source-Available Non-Commercial** license.
 See [LICENSE](LICENSE) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ---
