@@ -210,11 +210,15 @@ class NeuroShunter {
     static async dispatch(ctx, rawResponse, brain, controller, options = {}) {
         let textToParse = rawResponse;
         let attachments = options.attachments || [];
+        let responseReplyOptions = null;
 
         // 📥 [v9.1.10] 支援結構化回應物件 { text, attachments }
         if (rawResponse && typeof rawResponse === 'object' && !Array.isArray(rawResponse)) {
             textToParse = rawResponse.text || "";
             attachments = [...attachments, ...(rawResponse.attachments || [])];
+            if (rawResponse.replyOptions && typeof rawResponse.replyOptions === 'object') {
+                responseReplyOptions = rawResponse.replyOptions;
+            }
         }
 
         const parsed = ResponseParser.parse(textToParse);
@@ -298,9 +302,9 @@ class NeuroShunter {
 
             // 附件處理：若無附件則維持單參數呼叫，相容既有上下文與測試
             if (attachments.length > 0) {
-                await ctx.reply(finalReply, buildReplyOptions(ctx, finalReply, { attachments: attachments }));
+                await ctx.reply(finalReply, buildReplyOptions(ctx, finalReply, { attachments: attachments, ...(responseReplyOptions || {}) }));
             } else {
-                const replyOptions = buildReplyOptions(ctx, finalReply);
+                const replyOptions = buildReplyOptions(ctx, finalReply, responseReplyOptions || {});
                 if (Object.keys(replyOptions).length > 0) {
                     await ctx.reply(finalReply, replyOptions);
                 } else {

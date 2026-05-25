@@ -701,11 +701,17 @@ class GolemBrain {
                     if (!canRetry) {
                         if (isDraftUnsent) {
                             const recovered = await interactor.clearComposerDraft().catch(() => false);
+                            const recoveryAttempt = Math.max(0, Number(options.draftRecoveryAttempt || 0));
                             const fallback = this._buildDraftUnsentFallbackReply({
                                 cleared: recovered,
-                                pageUrl: failure.pageUrl
+                                pageUrl: failure.pageUrl,
+                                recoveryAttempt
                             });
-                            return { text: fallback, attachments: [], status: 'USER_ACTION_REQUIRED' };
+                            const replyOptions = this._buildDraftUnsentReplyOptions({
+                                recoveryAttempt,
+                                includeNew: true
+                            });
+                            return { text: fallback, attachments: [], status: 'USER_ACTION_REQUIRED', replyOptions };
                         }
                         e.webFailure = failure;
                         throw e;
@@ -790,17 +796,50 @@ class GolemBrain {
         return false;
     }
 
-    _buildDraftUnsentFallbackReply({ cleared = false, pageUrl = '' } = {}) {
+    _buildDraftUnsentFallbackReply({ cleared = false, pageUrl = '', recoveryAttempt = 0 } = {}) {
         const actionText = cleared
             ? '我已先清空輸入框避免卡住。'
             : '我嘗試清空輸入框，但可能仍有殘留草稿。';
         const urlLine = pageUrl ? `\n目前頁面：${pageUrl}` : '';
+        if (Number(recoveryAttempt) >= 1) {
+            return [
+                '[GOLEM_REPLY]',
+                `系統偵測到重試後仍無法正常送出訊息。${actionText}`,
+                '本對話階段已失效，請按下方「/new」按鈕重啟新對話。',
+                '若 `/new` 也失敗，請重啟整個 Golem 系統（Restart System）。' + urlLine,
+                '[/GOLEM_REPLY]'
+            ].join('\n');
+        }
         return [
             '[GOLEM_REPLY]',
             `系統偵測到 Gemini 草稿未成功送出。${actionText}`,
-            '請回覆「重送」讓我重試一次，或直接輸入下一步指令。' + urlLine,
+            '請依序嘗試：',
+            '1) 點擊下方「重試」讓我自動重送上一則訊息。',
+            '2) 若仍失敗，請點擊「/new」開啟新對話。',
+            '若 `/new` 也失敗，請重啟整個 Golem 系統（Restart System）。' + urlLine,
             '[/GOLEM_REPLY]'
         ].join('\n');
+    }
+
+    _buildDraftUnsentReplyOptions({ recoveryAttempt = 0, includeNew = true } = {}) {
+        if (Number(recoveryAttempt) >= 1) {
+            return {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '/new', callback_data: 'DRAFTRECOVER_NEW' }
+                    ]]
+                }
+            };
+        }
+        const firstRow = [{ text: '重試', callback_data: 'DRAFTRECOVER_RETRY' }];
+        if (includeNew) {
+            firstRow.push({ text: '/new', callback_data: 'DRAFTRECOVER_NEW' });
+        }
+        return {
+            reply_markup: {
+                inline_keyboard: [firstRow]
+            }
+        };
     }
 
     _logWebFailure(failure, meta = {}) {

@@ -4,7 +4,7 @@
   <p><strong>Your AI operations hub: chat, act, remember, and collaborate over the long run.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-9.6.23-blue?style=for-the-badge" alt="version" />
+    <img src="https://img.shields.io/badge/version-9.6.24-blue?style=for-the-badge" alt="version" />
     <img src="https://img.shields.io/badge/node.js-20~22-3C873A?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="node" />
     <img src="https://img.shields.io/badge/backend-gemini%20web%20%7C%20ollama%20%7C%20lmstudio-orange?style=for-the-badge" alt="backend" />
     <img src="https://img.shields.io/badge/dashboard-next.js-black?style=for-the-badge&logo=nextdotjs" alt="dashboard" />
@@ -85,15 +85,13 @@ Many AI tools are great for one-shot prompts, but weak for continuous work. Proj
 
 ## UI showcase
 
-<img src="assets/dashboard-overview.png" width="900" alt="Dashboard Overview" />
-<img src="assets/dashboard-chat.png" width="900" alt="Dashboard Chat" />
-<img src="assets/dashboard-skills.png" width="900" alt="Dashboard Skills" />
-<img src="assets/dashboard-memory-core.png" width="900" alt="Dashboard Memory" />
-<img src="assets/dashboard-stocks.png" width="900" alt="Dashboard Stocks" />
-<img src="assets/dashboard-mcp.png" width="900" alt="Dashboard MCP" />
-<img src="assets/dashboard-calendar.png" width="900" alt="Dashboard Calendar" />
-<img src="assets/dashboard-rpg.png" width="900" alt="Dashboard RPG" />
-<img src="assets/dashboard-settings.png" width="900" alt="Dashboard Settings" />
+<img src="assets/screenshots/dashboard-skills.png" width="900" alt="Skills" />
+<img src="assets/screenshots/dashboard-memory-core.png" width="900" alt="Memory Core" />
+<img src="assets/screenshots/dashboard-stocks.png" width="900" alt="Stocks" />
+<img src="assets/screenshots/dashboard-mcp.png" width="900" alt="MCP Tools" />
+<img src="assets/screenshots/dashboard-calendar.png" width="900" alt="Calendar" />
+<img src="assets/screenshots/dashboard-rpg.png" width="900" alt="Text RPG" />
+<img src="assets/screenshots/dashboard-settings.png" width="900" alt="System Settings" />
 
 Current main dashboard routes (from `web-dashboard/src/app/dashboard`) include:
 
@@ -115,7 +113,6 @@ Current main dashboard routes (from `web-dashboard/src/app/dashboard`) include:
 - `/dashboard/memory-firewall`: Memory Firewall
 - `/dashboard/reference-files`: Reference Files
 - `/dashboard/settings`: system settings summary
-
 
 ---
 

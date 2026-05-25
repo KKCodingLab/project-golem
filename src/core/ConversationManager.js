@@ -16,6 +16,7 @@ class ConversationManager {
         this.queue = [];
         this.isProcessing = false;
         this.userBuffers = new Map();
+        this.lastUserTurnByChat = new Map();
         this.silentMode = false;
         this.observerMode = false;
         this.interventionLevel = options.interventionLevel || 'CONSERVATIVE';
@@ -29,6 +30,12 @@ class ConversationManager {
         // 🔄 [Instance Pooling] 背景監控與定時重啟定時器
         this.UPTIME_LIMIT_MS = 24 * 60 * 60 * 1000; // 24H
         this._healthCheckInterval = setInterval(() => this._checkInstanceHealth(), 60 * 60 * 1000); // Check every hour
+    }
+
+    getLastUserTurn(chatId) {
+        const key = String(chatId || '').trim();
+        if (!key) return null;
+        return this.lastUserTurnByChat.get(key) || null;
     }
 
     destroy() {
@@ -226,6 +233,14 @@ class ConversationManager {
 
             // ✨ [Log] 只記錄真正的使用者輸入；工具/技能 Observation 是內部上下文，不顯示在使用者歷史中。
             if (!isSystemFeedback) {
+                const chatKey = String(task.ctx && task.ctx.chatId ? task.ctx.chatId : '');
+                if (chatKey) {
+                    this.lastUserTurnByChat.set(chatKey, {
+                        text: task.text,
+                        attachment: task.attachment || null,
+                        at: Date.now()
+                    });
+                }
                 this.brain._appendChatLog({
                     timestamp: Date.now(),
                     sender: 'User', // 統一顯示為 User，也可由 ctx.userId 區分
@@ -285,6 +300,8 @@ class ConversationManager {
                 interventionLevel: this.interventionLevel,
                 attachment: task.attachment,
                 isAdmin: task.ctx && task.ctx.isAdmin === true,
+                chatId: task.ctx && task.ctx.chatId,
+                platform: task.ctx && task.ctx.platform,
                 ...task.options // 🎯 [v9.1.13] 透傳來自隊列的自定義選項 (如 suppressReply)
             });
 
@@ -294,6 +311,10 @@ class ConversationManager {
                 if (inspected && inspected.blocked && typeof inspected.text === 'string') {
                     raw = inspected.text;
                 }
+            }
+            if (brainResponse && typeof brainResponse === 'object') {
+                brainResponse.text = raw;
+                brainResponse.attachments = responseAttachments;
             }
 
             // ✨ [Metacognition] AUQ 信心評分與標記
@@ -311,7 +332,7 @@ class ConversationManager {
                 extractor_status: extractorStatus
             }).catch(e => console.error("[ConfidenceTracker] Record error:", e));
 
-            await this.NeuroShunter.dispatch(task.ctx, raw, this.brain, this.controller, {
+            await this.NeuroShunter.dispatch(task.ctx, brainResponse, this.brain, this.controller, {
                 suppressReply: shouldSuppressReply || task.options.suppressReply === true,
                 attachments: responseAttachments,
                 isSystemFeedback: task.options.isSystemFeedback === true,

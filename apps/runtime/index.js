@@ -960,6 +960,50 @@ async function handleUnifiedCallback(ctx, actionData) {
         }
     }
 
+    if (actionData === 'DRAFTRECOVER_RETRY') {
+        const { convoManager } = getOrCreateGolem();
+        const lastTurn = convoManager && typeof convoManager.getLastUserTurn === 'function'
+            ? convoManager.getLastUserTurn(ctx.chatId)
+            : null;
+        if (!lastTurn || !lastTurn.text) {
+            await ctx.reply('⚠️ 找不到可重試的上一則訊息。請直接輸入新訊息，或按下「/new」重啟對話。', {
+                reply_markup: {
+                    inline_keyboard: [[{ text: '/new', callback_data: 'DRAFTRECOVER_NEW' }]]
+                }
+            });
+            return;
+        }
+        await ctx.reply('🔁 已收到重試，正在重新送出上一則訊息...');
+        await convoManager.enqueue(ctx, lastTurn.text, {
+            attachment: lastTurn.attachment || null,
+            isPriority: true,
+            bypassDebounce: true,
+            draftRecoveryAttempt: 1,
+            disableWebAutoRetry: true
+        });
+        return;
+    }
+
+    if (actionData === 'DRAFTRECOVER_NEW') {
+        const { brain } = getOrCreateGolem();
+        await ctx.reply("🔄 正在執行 /new，嘗試開啟全新的對話...");
+        try {
+            const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
+            const apiBackendLabel = brain.backend === 'lmstudio' ? 'LM Studio' : 'Ollama';
+            if (brain.page || isApiBackend) {
+                await brain.init(true);
+                await ctx.reply(isApiBackend
+                    ? `✅ ${apiBackendLabel} 對話狀態已重置完成。`
+                    : "✅ /new 完成，已開啟全新對話。");
+            } else {
+                await ctx.reply("⚠️ /new 失敗：找不到活躍網頁視窗。請重啟整個 Golem 系統（Restart System）。");
+            }
+        } catch (e) {
+            await ctx.reply(`⚠️ /new 執行失敗：${e.message}\n請重啟整個 Golem 系統（Restart System）。`);
+        }
+        return;
+    }
+
     if (!ctx.isAdmin) return;
 
     // 解析 GolemId (如果是 PATCH 相關)
