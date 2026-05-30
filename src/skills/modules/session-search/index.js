@@ -13,7 +13,7 @@ const path = require('path');
  *  - date     : 依日期範圍列出對話
  */
 async function run(ctx) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     const brain = ctx.brain;
 
     if (!brain || !brain.chatLogManager) {

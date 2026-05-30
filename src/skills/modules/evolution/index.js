@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 async function run(ctx) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     try {
         const file = args.file;
         const findStr = args.find;

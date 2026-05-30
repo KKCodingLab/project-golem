@@ -23,31 +23,65 @@ class ResponseExtractor {
         const timeout = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
             ? options.timeoutMs
             : TIMINGS.TIMEOUT;
+        const graceMultiplier = Number.isFinite(Number(options.stableGraceMultiplier)) && Number(options.stableGraceMultiplier) > 0
+            ? Number(options.stableGraceMultiplier)
+            : 1.5;
+        const stableThinkingThreshold = Math.max(stableThinking, Math.ceil(stableThinking * graceMultiplier));
 
         return page.evaluate(
             async ({ sel, sTag, eTag, oldText, _stableComplete, _stableThinking, _pollInterval, _timeout }) => {
                 return new Promise((resolve) => {
                     const startTime = Date.now();
+                    let beganAt = 0;
                     let stableCount = 0;
                     let lastCheckText = "";
                     let lastResponseText = "";
                     let lastAttachments = [];
 
                     const check = () => {
-                        const bubbles = document.querySelectorAll(sel);
+                        const bubbles = Array.from(document.querySelectorAll(sel));
                         if (bubbles.length === 0) { setTimeout(check, _pollInterval); return; }
 
-                        let currentLastBubble = bubbles[bubbles.length - 1];
+                        const isEditableNode = (el) => {
+                            if (!el) return false;
+                            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return true;
+                            if (el.isContentEditable) return true;
+                            if (el.getAttribute && el.getAttribute('contenteditable') === 'true') return true;
+                            return false;
+                        };
+                        const isSemanticResponseNode = (el) => {
+                            if (!el) return false;
+                            if (isEditableNode(el)) return false;
+                            return Boolean(
+                                el.closest('model-response') ||
+                                el.closest('.model-response-text') ||
+                                el.closest('.message-content') ||
+                                el.closest('[data-message-id]') ||
+                                el.closest('.conversation-turn')
+                            );
+                        };
+
+                        const semanticCandidates = bubbles.filter((node) => isSemanticResponseNode(node));
+                        let currentLastBubble = (semanticCandidates.length ? semanticCandidates : bubbles).slice(-1)[0] || null;
+                        if (!currentLastBubble) { setTimeout(check, _pollInterval); return; }
+
                         let container = currentLastBubble.closest('model-response') ||
                             currentLastBubble.closest('.markdown') ||
                             currentLastBubble.closest('.model-response-text') ||
+                            currentLastBubble.closest('.message-content') ||
                             currentLastBubble.parentElement ||
                             currentLastBubble;
+                        if (isEditableNode(container)) {
+                            container = currentLastBubble;
+                        }
 
                         const rawText = container.innerText || "";
                         lastResponseText = rawText;
                         const startIndex = rawText.indexOf(sTag);
                         const endIndex = rawText.indexOf(eTag);
+                        if (startIndex !== -1 && beganAt === 0) {
+                            beganAt = Date.now();
+                        }
 
                         // 📸 [v9.1.10] 提取容器內的圖片與其他附件
                         const attachments = [];
@@ -101,6 +135,12 @@ class ResponseExtractor {
                         }
                         lastCheckText = rawText;
 
+                        // 嘗試判斷目前是否仍在生成（避免慢回應被誤判截斷）
+                        const pageText = document.body ? (document.body.innerText || '') : '';
+                        const isLikelyGenerating =
+                            /(?:thinking|generating|processing|停止|停止生成|Stop generating|Continue generating)/i.test(pageText) ||
+                            !!document.querySelector('button[aria-label*=\"Stop\" i], button[aria-label*=\"停止\" i], [data-testid*=\"stop\" i]');
+
                         if (startIndex !== -1) {
                             // ✨ [條件 2：已經開始回答] 看到 BEGIN，但遲遲沒看到 END (AI 忘記寫)
                             // 只要畫面停頓超過 5 秒 (10 次檢查) 沒動靜，就強制截斷回傳，不等 30 秒！
@@ -113,10 +153,31 @@ class ResponseExtractor {
                                 });
                                 return;
                             }
-                        } else if (rawText !== oldText && !rawText.includes('SYSTEM: Please WRAP')) {
+                            // [v9.6.22] BEGIN 後若遲遲沒 END，給絕對上限避免首則卡死
+                            if (beganAt > 0 && Date.now() - beganAt > 45000) {
+                                const content = rawText.substring(startIndex + sTag.length).trim();
+                                resolve({
+                                    status: 'ENVELOPE_TRUNCATED_TIMEOUT',
+                                    text: content,
+                                    attachments: attachments
+                                });
+                                return;
+                            }
+                        } else if (rawText !== oldText) {
+                            // ✨ [條件 3.5：只有 END 沒有 BEGIN]
+                            // 有些回合模型會漏掉 BEGIN，只留下 END。若文字已穩定，直接回收 END 前內容。
+                            if (endIndex !== -1 && stableCount > _stableThinking && !isLikelyGenerating) {
+                                const content = rawText.substring(0, endIndex).trim();
+                                resolve({
+                                    status: 'ENVELOPE_END_ONLY',
+                                    text: content,
+                                    attachments: attachments
+                                });
+                                return;
+                            }
                             // ✨ [條件 3：Thinking Mode] 還沒看到 BEGIN，可能在深思
-                            // 給予最高 30 秒 (60 次檢查) 的容忍度，等它想完
-                            if (stableCount > _stableThinking) {
+                            // 若偵測仍在生成，延長容忍，避免慢回應被誤截斷
+                            if (stableCount > _stableThinking && !isLikelyGenerating) {
                                 resolve({ 
                                     status: 'FALLBACK_DIFF', 
                                     text: rawText,
@@ -146,7 +207,7 @@ class ResponseExtractor {
                 eTag: endTag,
                 oldText: baseline,
                 _stableComplete: stableComplete,
-                _stableThinking: stableThinking,
+                _stableThinking: stableThinkingThreshold,
                 _pollInterval: pollInterval,
                 _timeout: timeout
             }

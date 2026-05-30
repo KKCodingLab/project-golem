@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Users, Globe, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, GripVertical, Terminal, BrainCircuit, BookOpen, Settings, User, MessageSquare, Plug, BookHeart, Library, Activity, Gamepad2, LineChart, Database } from "lucide-react";
+import { LayoutDashboard, Users, Globe, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, GripVertical, Terminal, BrainCircuit, BookOpen, Settings, User, MessageSquare, Plug, BookHeart, Library, Activity, Gamepad2, LineChart, Database, CalendarDays, Eye, EyeOff, Shield } from "lucide-react";
 import { GolemProvider, useGolem } from "@/components/GolemContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BootScreen } from "@/components/BootScreen";
@@ -14,6 +14,7 @@ import { useI18n } from "@/components/I18nProvider";
 import GlobalAutoDiaryBell from "./components/GlobalAutoDiaryBell";
 
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = "golem-sidebar-nav-order-v1";
+const SIDEBAR_NAV_HIDDEN_STORAGE_KEY = "golem-sidebar-nav-hidden-v1";
 
 const NAV_ITEMS = [
     { labelKey: "sidebar.nav.chat", href: "/dashboard/chat", icon: MessageSquare },
@@ -22,12 +23,15 @@ const NAV_ITEMS = [
     { labelKey: "sidebar.nav.promptPool", href: "/dashboard/prompt-pool", icon: Library },
     { labelKey: "sidebar.nav.promptTrends", href: "/dashboard/prompt-trends", icon: Activity },
     { labelKey: "sidebar.nav.stocks", href: "/dashboard/stocks", icon: LineChart },
+    { labelKey: "sidebar.nav.calendar", href: "/dashboard/calendar", icon: CalendarDays },
     { labelKey: "sidebar.nav.rpg", href: "/dashboard/rpg", icon: Gamepad2 },
     { labelKey: "sidebar.nav.skills", href: "/dashboard/skills", icon: BookOpen },
     { labelKey: "sidebar.nav.mcp", href: "/dashboard/mcp", icon: Plug },
+    { labelKey: "sidebar.nav.actionGate", href: "/dashboard/action-gate", icon: Terminal },
     { labelKey: "sidebar.nav.agents", href: "/dashboard/agents", icon: Users },
     { labelKey: "sidebar.nav.office", href: "/dashboard/office", icon: Users },
     { labelKey: "sidebar.nav.memory", href: "/dashboard/memory", icon: BrainCircuit },
+    { labelKey: "sidebar.nav.memoryFirewall", href: "/dashboard/memory-firewall", icon: Shield },
     { labelKey: "sidebar.nav.referenceFiles", href: "/dashboard/reference-files", icon: Database },
     { labelKey: "sidebar.nav.settingsSummary", href: "/dashboard/settings", icon: Settings },
 ] as const;
@@ -79,6 +83,19 @@ function readStoredSidebarNavOrder(): SidebarNavHref[] {
     }
 }
 
+function readStoredHiddenHrefs(): Set<SidebarNavHref> {
+    if (typeof window === "undefined") return new Set();
+    try {
+        const raw = localStorage.getItem(SIDEBAR_NAV_HIDDEN_STORAGE_KEY);
+        if (!raw) return new Set();
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return new Set();
+        return new Set(parsed.filter((v): v is SidebarNavHref => isSidebarNavHref(v)));
+    } catch {
+        return new Set();
+    }
+}
+
 function DashboardSidebar({
     isSidebarOpen,
     setIsSidebarOpen
@@ -90,6 +107,7 @@ function DashboardSidebar({
     const { activeGolem, setActiveGolem, golems, version } = useGolem();
     const { t } = useI18n();
     const [navOrder, setNavOrder] = useState<SidebarNavHref[]>(() => readStoredSidebarNavOrder());
+    const [hiddenHrefs, setHiddenHrefs] = useState<Set<SidebarNavHref>>(() => readStoredHiddenHrefs());
     const [isSidebarCustomizerOpen, setIsSidebarCustomizerOpen] = useState(false);
     const [draggingHref, setDraggingHref] = useState<SidebarNavHref | null>(null);
     const [dragOverHref, setDragOverHref] = useState<SidebarNavHref | null>(null);
@@ -105,12 +123,34 @@ function DashboardSidebar({
         }
     }, [navOrder]);
 
+    // 持久化隱藏清單
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            localStorage.setItem(SIDEBAR_NAV_HIDDEN_STORAGE_KEY, JSON.stringify([...hiddenHrefs]));
+        }
+    }, [hiddenHrefs]);
+
+    const toggleHidden = (href: SidebarNavHref) => {
+        setHiddenHrefs((prev) => {
+            const next = new Set(prev);
+            if (next.has(href)) {
+                next.delete(href);
+            } else {
+                next.add(href);
+            }
+            return next;
+        });
+    };
+
     const navItemByHref = new Map<SidebarNavHref, SidebarNavItem>(
         NAV_ITEMS.map((item) => [item.href, item])
     );
     const orderedNavItems = navOrder
         .map((href) => navItemByHref.get(href))
         .filter((item): item is SidebarNavItem => Boolean(item));
+
+    // 側邊欄實際顯示的項目（排除隱藏的）
+    const visibleNavItems = orderedNavItems.filter((item) => !hiddenHrefs.has(item.href));
 
     const reorderNavItems = (dragHref: SidebarNavHref, dropHref: SidebarNavHref) => {
         if (dragHref === dropHref) return;
@@ -152,7 +192,7 @@ function DashboardSidebar({
                             Project Golem
                         </h1>
                         <div className="mt-1 flex items-center gap-2">
-                            <span className="enterprise-badge">v{version}</span>
+                            <span className="enterprise-badge">{version}</span>
                             <p className="text-[11px] text-muted-foreground whitespace-nowrap">
                                 {t("sidebar.botControlCenter")}
                             </p>
@@ -233,6 +273,11 @@ function DashboardSidebar({
                                 <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground truncate">
                                     {t("sidebar.customizeNav.title")}
                                 </span>
+                                {hiddenHrefs.size > 0 && (
+                                    <span className="text-[10px] font-semibold bg-secondary/80 border border-border/60 text-muted-foreground rounded px-1 py-0.5 shrink-0">
+                                        {hiddenHrefs.size} {t("sidebar.customizeNav.hiddenCount")}
+                                    </span>
+                                )}
                             </div>
                             {isSidebarCustomizerOpen ? (
                                 <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -251,6 +296,7 @@ function DashboardSidebar({
                                     const isDragOver = dragOverHref === item.href && draggingHref !== item.href;
                                     const isFirst = index === 0;
                                     const isLast = index === orderedNavItems.length - 1;
+                                    const isHidden = hiddenHrefs.has(item.href);
                                     return (
                                         <div
                                             key={`customizer-${item.href}`}
@@ -286,7 +332,9 @@ function DashboardSidebar({
                                                 "group flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 transition-colors cursor-grab active:cursor-grabbing",
                                                 isDragging
                                                     ? "bg-primary/10 border-primary/40 opacity-70"
-                                                    : "bg-secondary/35 border-border/70 hover:bg-secondary/55",
+                                                    : isHidden
+                                                        ? "bg-secondary/15 border-border/40 opacity-50"
+                                                        : "bg-secondary/35 border-border/70 hover:bg-secondary/55",
                                                 isDragOver && "bg-primary/15 border-primary/60"
                                             )}
                                         >
@@ -294,12 +342,24 @@ function DashboardSidebar({
                                                 <GripVertical
                                                     className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0"
                                                 />
-                                                <span className="text-xs text-foreground truncate">
+                                                <span className={cn("text-xs truncate", isHidden ? "text-muted-foreground/50 line-through" : "text-foreground")}>
                                                     {t(item.labelKey)}
                                                 </span>
                                             </div>
 
                                             <div className="flex items-center gap-1 shrink-0">
+                                                {/* 隱藏/顯示切換 */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleHidden(item.href)}
+                                                    title={isHidden ? t("sidebar.customizeNav.show") : t("sidebar.customizeNav.hide")}
+                                                    className="w-6 h-6 rounded border border-border flex items-center justify-center transition-colors text-muted-foreground hover:text-foreground hover:bg-accent/70"
+                                                >
+                                                    {isHidden
+                                                        ? <EyeOff className="w-3 h-3" />
+                                                        : <Eye className="w-3 h-3" />
+                                                    }
+                                                </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => moveNavItem(item.href, -1)}
@@ -338,7 +398,7 @@ function DashboardSidebar({
                 )}
 
                 <nav className="flex-1 py-4 space-y-1 overflow-y-auto flex flex-col items-center custom-scrollbar">
-                    {orderedNavItems.map((item) => {
+                    {visibleNavItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = pathname.startsWith(item.href);
 

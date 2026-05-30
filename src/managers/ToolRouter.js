@@ -6,6 +6,8 @@ const ToolUsePolicy = require('./ToolUsePolicy');
 const MCPToolCatalog = require('../mcp/MCPToolCatalog');
 
 const MCP_CONFIG_PATH = path.resolve(process.cwd(), 'data', 'mcp-servers.json');
+const LOCAL_COMMAND_RE = /(terminal|shell|bash|zsh|cmd|命令|指令|終端機|本機|專案|repo|資料夾|檔案|目錄|路徑|安裝|npm|pnpm|yarn|node|python|git|ls|pwd|cd|cat|sed|grep|rg|build|test|lint|run|execute|執行|編譯|啟動|server)/i;
+const EXTERNAL_SYSTEM_RE = /(@gmail|@google|calendar|gmail|drive|mcp|devtools|notion|slack|teams|github[^a-z]|telegram|discord|瀏覽器自動化|外部服務|第三方)/i;
 const STOPWORDS = new Set([
     'the', 'and', 'for', 'with', 'from', 'this', 'that', 'what', 'when', 'where', 'how',
     '你', '我', '他', '她', '它', '我們', '你們', '請', '幫我', '可以', '一下', '這個', '那個',
@@ -44,11 +46,15 @@ function inferIntentBoosts(text) {
 
     add(/(log|logs|error|錯誤|報錯|日誌|紀錄|debug|除錯)/i, ['log-reader', 'log-archive']);
     add(/(browser|chrome|devtools|網頁|頁面|點擊|輸入|表單|console|network|lighthouse|截圖|瀏覽器)/i, ['chrome-devtools']);
+    add(/(搜尋引擎|meta search|metasearch|網路搜尋|公開資料|查資料|duckduckgo|html\.duckduckgo)/i, ['duckduckgo-search', 'chrome-devtools']);
+    add(/(搜尋後|深入查看|深入網頁|繼續查看這個網頁|deep dive|follow-up crawl)/i, ['duckduckgo-devtools-bridge', 'duckduckgo-search', 'chrome-devtools']);
     add(/(git|commit|branch|diff|pull request|pr|版本|分支)/i, ['git']);
     add(/(記憶|memory|回憶|以前|之前|歷史|找對話|搜尋對話)/i, ['memory', 'session-search']);
-    add(/(排程|提醒|schedule|定時|每天|明天|下週|cron)/i, ['chronos', 'schedule', 'list-schedules']);
+    add(/(排程|提醒|schedule|定時|每天|明天|下週|cron)/i, ['chronos', 'collab-calendar']);
+    add(/(行程|行事曆|日曆|calendar|今天有什麼|明天有什麼|這週|下週|新增行程|加入行程|排行程|有什麼約|約了什麼|協作日曆)/i, ['collab-calendar']);
     add(/(圖片|影像|畫圖|生成圖|image|prompt)/i, ['image-prompt']);
     add(/(youtube|影片|字幕)/i, ['youtube']);
+    add(/(notebooklm|研究包|study pack|mind map|audio overview|slide deck|flashcards|quiz)/i, ['notebooklm-studio']);
     add(/(spotify|音樂|播放清單)/i, ['spotify']);
     add(/(代理|agent|multi-agent|協作|委派|delegate)/i, ['multi-agent', 'delegate-task']);
     add(/(檔案|附件|參考資料|reference)/i, ['reference-files']);
@@ -109,18 +115,60 @@ function compactJson(value) {
     return JSON.stringify(value, null, 2).replace(/\n/g, '\n  ');
 }
 
+function isLikelyCommandTask(query) {
+    const text = String(query || '');
+    if (!text.trim()) return false;
+    if (!LOCAL_COMMAND_RE.test(text)) return false;
+    if (EXTERNAL_SYSTEM_RE.test(text)) return false;
+    return true;
+}
+
+function loadCoreSlashCommands() {
+    try {
+        const defs = require('../config/commands');
+        const keep = new Set(['/new', '/new_memory', '/skills', '/learn', '/install', '/toolset', '/search', '/project']);
+        return (Array.isArray(defs) ? defs : [])
+            .filter((item) => item && keep.has(String(item.command || '').trim()))
+            .map((item) => ({
+                command: String(item.command || '').trim(),
+                description: String(item.description || '').trim()
+            }));
+    } catch (_) {
+        return [];
+    }
+}
+
 class ToolRouter {
     constructor(options = {}) {
         this.userDataDir = options.userDataDir || null;
         this.activeTools = Array.isArray(options.activeTools) ? options.activeTools : null;
         this.activeScene = options.activeScene || toolsetManager.getActiveScene();
         this.policy = options.policy || new ToolUsePolicy();
+        this.toolVectorIndex = options.toolVectorIndex || null; // 由 GolemBrain 注入
+    }
+
+    async routeAsync(query, options = {}) {
+        // 若有向量索引，先做語意搜尋取得 boost 清單
+        let vectorBoostIds = new Set();
+        if (this.toolVectorIndex) {
+            try {
+                const vectorResults = await this.toolVectorIndex.search(query, { limit: 10 });
+                for (const r of vectorResults) {
+                    if (r.score > 0.35) vectorBoostIds.add(r.id); // 相似度門檻
+                }
+            } catch (e) {
+                console.warn(`[ToolRouter] 向量搜尋失敗，退回關鍵字模式: ${e.message}`);
+            }
+        }
+        return this.route(query, { ...options, vectorBoostIds });
     }
 
     route(query, options = {}) {
         const maxSkills = Number(options.maxSkills || 5);
         const maxMcpTools = Number(options.maxMcpTools || 6);
         const activeTools = new Set(this.activeTools || toolsetManager.getActiveTools());
+        const requestClass = this.policy.classifyRequest(query);
+        const vectorBoostIds = options.vectorBoostIds instanceof Set ? options.vectorBoostIds : new Set();
 
         const skillCandidates = SkillPackageRegistry.listSkillPackages({ userDataDir: this.userDataDir })
             .filter(pkg => pkg.enabled !== false)
@@ -136,6 +184,7 @@ class ToolRouter {
                     triggers: manifest.triggers || [],
                     hasRuntime: fs.existsSync(pkg.indexPath),
                     allowed: activeTools.has(pkg.id) || activeTools.has(pkg.action),
+                    semanticBoost: false,
                     content,
                     score: 0,
                 };
@@ -144,6 +193,11 @@ class ToolRouter {
         for (const candidate of skillCandidates) {
             candidate.score = scoreCandidate(query, candidate);
             if (candidate.allowed) candidate.score += 2;
+            // 向量語意 boost：命中向量搜尋結果的技能額外加分
+            if (vectorBoostIds.has(candidate.id) || vectorBoostIds.has(candidate.action)) {
+                candidate.semanticBoost = true;
+                candidate.score += 12;
+            }
         }
 
         const skills = this.policy.filter(query, skillCandidates)
@@ -164,6 +218,7 @@ class ToolRouter {
                     inputSchema: tool.inputSchema || tool.schema || null,
                     example: catalogTool?.example || MCPToolCatalog.buildActionExample(server.name, tool.name, tool.inputSchema || tool.schema || {}),
                     content: `${server.name} ${serverDesc} ${tool.name} ${tool.description || ''}`,
+                    semanticBoost: false,
                     score: 0,
                 };
                 candidate.score = scoreCandidate(query, candidate);
@@ -171,24 +226,55 @@ class ToolRouter {
             }
         }
 
+        // 向量語意 boost for MCP tools
+        for (const candidate of mcpTools) {
+            if (vectorBoostIds.has(candidate.id)) {
+                candidate.semanticBoost = true;
+                candidate.score += 12;
+            }
+        }
+
         const filteredMcpTools = this.policy.filter(query, mcpTools)
             .sort((a, b) => b.score - a.score);
+
+        const commandLane = {
+            recommended: requestClass.shouldRoute && isLikelyCommandTask(query),
+            reason: requestClass.shouldRoute && isLikelyCommandTask(query)
+                ? 'local_os_or_repo_operation'
+                : 'prefer_skill_or_mcp_or_text',
+        };
 
         return {
             skills,
             mcpTools: filteredMcpTools.slice(0, maxMcpTools),
+            commandLane,
+            slashCommands: loadCoreSlashCommands(),
             activeScene: this.activeScene,
         };
     }
 
     buildRoutingHint(query, options = {}) {
         const result = this.route(query, options);
-        if (result.skills.length === 0 && result.mcpTools.length === 0) return '';
+        return this._formatRoutingHint(result);
+    }
+
+    async buildRoutingHintAsync(query, options = {}) {
+        const result = await this.routeAsync(query, options);
+        return this._formatRoutingHint(result);
+    }
+
+    _formatRoutingHint(result) {
+        if (result.skills.length === 0 && result.mcpTools.length === 0 && !result.commandLane.recommended) return '';
 
         const lines = [
             '<tool-routing>',
             `[System note: 以下是本輪依使用者訊息自動產生的工具建議。若任務符合，優先使用；若不符合，可以忽略。當工具能取得事實、操作外部系統或執行專門能力時，不要只用文字猜測。Active scene: ${result.activeScene}]`,
         ];
+
+        if (result.commandLane.recommended) {
+            lines.push('Relevant command lane:');
+            lines.push('- command: local OS/repo operation detected. Use shell action format: {"action":"command","parameter":"<native command>"}');
+        }
 
         if (result.skills.length > 0) {
             lines.push('Relevant skills:');
@@ -211,7 +297,17 @@ class ToolRouter {
         }
 
         lines.push('Decision rules:');
+        lines.push('- Route priority: local OS/repo work => command; packaged capability => skill action; external integration/service/browser connector => mcp_call.');
+        lines.push('- Never use mcp_call for pure local shell tasks. Never use command for external connector tasks that already have MCP tools.');
+        lines.push('- For public web search tasks, prefer skill action {"action":"duckduckgo-search","args":{"query":"..."}}. Use chrome-devtools only when the task requires browser interaction, login, DOM, console, or network inspection.');
+        lines.push('- For browse-and-read tasks, prefer a 2-step MCP action array: (1) navigate_page/new_page, then (2) take_snapshot, and summarize from snapshot.');
         lines.push(...this.policy.buildRules());
+        if (result.slashCommands.length > 0) {
+            lines.push('Core slash commands (can be triggered directly when user asks):');
+            for (const item of result.slashCommands) {
+                lines.push(`- ${item.command}: ${item.description}`);
+            }
+        }
         lines.push('- 若推薦工具不足以完成任務，先用可用工具探測，不要杜撰不存在的工具。');
         lines.push('</tool-routing>');
         return lines.join('\n');

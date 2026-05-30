@@ -4,7 +4,7 @@
 const ConfigManager = require('../../../config');
 
 async function run(ctx) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     const brain = ctx.brain || ctx;
     const actualBrain = ctx.brain || brain;
 

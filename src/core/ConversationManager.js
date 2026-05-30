@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const ConfigManager = require('../config');
 const ConfidenceTracker = require('../managers/ConfidenceTracker');
 const ReferenceFileService = require('../services/ReferenceFileService');
+const { getMemoryFirewallService } = require('../services/MemoryFirewallService');
 
 // ============================================================
 // 🚦 Conversation Manager (隊列與防抖系統 - 多用戶隔離版)
@@ -15,6 +16,7 @@ class ConversationManager {
         this.queue = [];
         this.isProcessing = false;
         this.userBuffers = new Map();
+        this.lastUserTurnByChat = new Map();
         this.silentMode = false;
         this.observerMode = false;
         this.interventionLevel = options.interventionLevel || 'CONSERVATIVE';
@@ -23,10 +25,17 @@ class ConversationManager {
 
         // 初始化信心追蹤器
         this.confidenceTracker = new ConfidenceTracker(this.brain.chatLogManager);
+        this.memoryFirewall = getMemoryFirewallService();
 
         // 🔄 [Instance Pooling] 背景監控與定時重啟定時器
         this.UPTIME_LIMIT_MS = 24 * 60 * 60 * 1000; // 24H
         this._healthCheckInterval = setInterval(() => this._checkInstanceHealth(), 60 * 60 * 1000); // Check every hour
+    }
+
+    getLastUserTurn(chatId) {
+        const key = String(chatId || '').trim();
+        if (!key) return null;
+        return this.lastUserTurnByChat.get(key) || null;
     }
 
     destroy() {
@@ -89,6 +98,10 @@ class ConversationManager {
             this._commitToQueue(chatId);
         }, this.DEBOUNCE_MS);
         this.userBuffers.set(chatId, userState);
+    }
+
+    _logQueueState(reason = 'update') {
+        console.log(`[QueueState] queue=${this.queue.length} processing=${this.isProcessing ? 1 : 0} reason=${reason}`);
     }
 
     _commitDirectly(ctx, text, isPriority, attachment = null, options = {}) {
@@ -160,6 +173,7 @@ class ConversationManager {
         } else {
             this.queue.push({ ctx, text, attachment, options });
         }
+        this._logQueueState(isPriority ? 'enqueue_priority' : 'enqueue_normal');
         this._processQueue();
     }
 
@@ -193,6 +207,7 @@ class ConversationManager {
 
         this.isProcessing = true;
         const task = this.queue.shift();
+        this._logQueueState('dequeue_start');
 
         // 🧹 [Extra Arch 3] Memory Guard 記憶體上限監控
         const heapObj = process.memoryUsage();
@@ -206,26 +221,53 @@ class ConversationManager {
 
         try {
             console.log(`🚀 [Dialogue Queue:${this.golemId}] 從隊列取出，開始處理對話...`);
-            console.log(`🗣️ [User->${this.golemId}] 說: ${task.text}${task.attachment ? ' 📎 含有附件' : ''}`, { attachment: task.attachment });
+            const isSystemFeedback = task.options && task.options.isSystemFeedback === true;
+            const logPreview = String(task.text || '').slice(0, isSystemFeedback ? 160 : 1000);
+            const truncatedMarker = String(task.text || '').length > logPreview.length ? '...' : '';
+            console.log(
+                isSystemFeedback
+                    ? `🧩 [System->${this.golemId}] Observation (${String(task.text || '').length} chars): ${logPreview}${truncatedMarker}`
+                    : `🗣️ [User->${this.golemId}] 說: ${logPreview}${truncatedMarker}${task.attachment ? ' 📎 含有附件' : ''}`,
+                { attachment: task.attachment }
+            );
 
-            // ✨ [Log] 記錄用戶輸入 (Fix missing user logs)
-            this.brain._appendChatLog({
-                timestamp: Date.now(),
-                sender: 'User', // 統一顯示為 User，也可由 ctx.userId 區分
-                content: task.text,
-                type: 'user',
-                role: 'User',
-                isSystem: false,
-                attachment: task.attachment
-            });
+            // ✨ [Log] 只記錄真正的使用者輸入；工具/技能 Observation 是內部上下文，不顯示在使用者歷史中。
+            if (!isSystemFeedback) {
+                const chatKey = String(task.ctx && task.ctx.chatId ? task.ctx.chatId : '');
+                if (chatKey) {
+                    this.lastUserTurnByChat.set(chatKey, {
+                        text: task.text,
+                        attachment: task.attachment || null,
+                        at: Date.now()
+                    });
+                }
+                this.brain._appendChatLog({
+                    timestamp: Date.now(),
+                    sender: 'User', // 統一顯示為 User，也可由 ctx.userId 區分
+                    content: task.text,
+                    type: 'user',
+                    role: 'User',
+                    isSystem: false,
+                    attachment: task.attachment
+                });
+            }
 
             await task.ctx.sendTyping();
-            const memories = await this.brain.recall(task.text);
+            const recalled = isSystemFeedback ? [] : await this.brain.recall(task.text);
+            let memories = Array.isArray(recalled)
+                ? recalled.filter((item) => !(item && item.metadata && item.metadata.visible === false))
+                : [];
+            if (!isSystemFeedback && this.memoryFirewall && this.memoryFirewall.isEnabled()) {
+                const guarded = this.memoryFirewall.filterMemories(memories, { golemId: this.golemId });
+                memories = Array.isArray(guarded.memories) ? guarded.memories : memories;
+            }
             let referenceContext = '';
-            try {
-                referenceContext = ReferenceFileService.buildContext(task.text, { limit: 4, maxChunkChars: 1200 });
-            } catch (error) {
-                console.warn(`[ReferenceFiles] 自動召回失敗: ${error.message}`);
+            if (!isSystemFeedback) {
+                try {
+                    referenceContext = ReferenceFileService.buildContext(task.text, { limit: 4, maxChunkChars: 1200 });
+                } catch (error) {
+                    console.warn(`[ReferenceFiles] 自動召回失敗: ${error.message}`);
+                }
             }
             let finalInput = task.text;
             if (referenceContext) {
@@ -257,10 +299,23 @@ class ConversationManager {
                 isObserver: this.observerMode,
                 interventionLevel: this.interventionLevel,
                 attachment: task.attachment,
+                isAdmin: task.ctx && task.ctx.isAdmin === true,
+                chatId: task.ctx && task.ctx.chatId,
+                platform: task.ctx && task.ctx.platform,
                 ...task.options // 🎯 [v9.1.13] 透傳來自隊列的自定義選項 (如 suppressReply)
             });
 
             let { text: raw, attachments: responseAttachments, status: extractorStatus } = brainResponse;
+            if (!isSystemFeedback && this.memoryFirewall && this.memoryFirewall.isEnabled()) {
+                const inspected = this.memoryFirewall.inspectResponse(raw, { golemId: this.golemId });
+                if (inspected && inspected.blocked && typeof inspected.text === 'string') {
+                    raw = inspected.text;
+                }
+            }
+            if (brainResponse && typeof brainResponse === 'object') {
+                brainResponse.text = raw;
+                brainResponse.attachments = responseAttachments;
+            }
 
             // ✨ [Metacognition] AUQ 信心評分與標記
             const evaluation = this.confidenceTracker.evaluate(raw, extractorStatus, task.text);
@@ -277,7 +332,7 @@ class ConversationManager {
                 extractor_status: extractorStatus
             }).catch(e => console.error("[ConfidenceTracker] Record error:", e));
 
-            await this.NeuroShunter.dispatch(task.ctx, raw, this.brain, this.controller, {
+            await this.NeuroShunter.dispatch(task.ctx, brainResponse, this.brain, this.controller, {
                 suppressReply: shouldSuppressReply || task.options.suppressReply === true,
                 attachments: responseAttachments,
                 isSystemFeedback: task.options.isSystemFeedback === true,
@@ -291,6 +346,7 @@ class ConversationManager {
             await task.ctx.reply(`⚠️ 系統暫時無法回應，請稍後再試。`);
         } finally {
             this.isProcessing = false;
+            this._logQueueState('process_done');
             
             // 🧹 [Memory Optimization] 強制執行 V8 垃圾回收，釋放回合變數
             if (global.gc) {

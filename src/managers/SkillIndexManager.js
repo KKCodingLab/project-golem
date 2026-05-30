@@ -52,6 +52,14 @@ class SkillIndexManager {
      * 同步本地檔案到 SQLite 索引
      * @param {string[]} enabledIds - 可選的啟動技能清單，若提供則只同步清單中的檔案並移除其他的（除了 mandatory）
      */
+    /**
+     * 同步本地技能到 SQLite 索引。
+     * 同步來源有兩個：
+     *   1. src/skills/lib/*.md（舊式 lib 技能，若目錄存在）
+     *   2. SkillPackageRegistry 掃描到的所有 package 技能（src/skills/modules/ 等）
+     * 所有 enabled 的 package 技能都會被加入，不受 enabledIds 限制。
+     * @param {string[]} enabledIds - lib 技能的啟動清單（MANDATORY + persona）
+     */
     async sync(enabledIds = []) {
         await this.init();
 
@@ -61,8 +69,10 @@ class SkillIndexManager {
             ...enabledIds
         ]);
 
-        console.log(`📡 [SkillIndex][${path.basename(path.dirname(this.dbPath))}] 開始同步技能說明書... (目標數量: ${effectiveIds.size})`);
+        const dbDir = path.dirname(this.dbPath);
+        console.log(`📡 [SkillIndex][${path.basename(dbDir)}] 開始同步技能說明書...`);
 
+        // ── 1. 同步 lib/*.md 舊式技能（若目錄存在）──────────────────────
         try {
             let files = [];
             try {
@@ -74,27 +84,28 @@ class SkillIndexManager {
 
             for (const file of mdFiles) {
                 const skillId = path.basename(file, '.md').toLowerCase();
-
                 if (effectiveIds.has(skillId)) {
                     await this.addSkill(skillId);
                 } else {
-                    // 嚴格執行：不在啟動清單中的技能一律從 SQLite 移除
                     await this.removeSkill(skillId);
                 }
             }
         } catch (e) {
-            console.error('❌ [SkillIndex] 同步失敗:', e.message);
+            console.error('❌ [SkillIndex] lib 技能同步失敗:', e.message);
         }
 
-        const packages = SkillPackageRegistry.listSkillPackages({ userDataDir: path.dirname(this.dbPath) });
+        // ── 2. 同步所有 SkillPackageRegistry package 技能（全部 enabled 的都加）──
+        const packages = SkillPackageRegistry.listSkillPackages({ userDataDir: dbDir });
+        let synced = 0;
         for (const pkg of packages) {
             if (pkg.enabled) {
                 await this.addSkillPackage(pkg);
+                synced++;
             } else {
                 await this.removeSkill(pkg.id);
             }
         }
-        console.log(`🏁 [SkillIndex][${path.basename(path.dirname(this.dbPath))}] 同步完成。`);
+        console.log(`🏁 [SkillIndex][${path.basename(dbDir)}] 同步完成 (lib=${effectiveIds.size}, packages=${synced})。`);
     }
 
     /**

@@ -1,0 +1,949 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "id": "example:skill:actor:core-detailed",
+      "lane": "skill",
+      "target": "actor",
+      "intent_tags": [
+        "skill",
+        "core",
+        "actor"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"actor\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:adaptive-learning:core-detailed",
+      "lane": "skill",
+      "target": "adaptive-learning",
+      "intent_tags": [
+        "skill",
+        "core",
+        "adaptive-learning"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"adaptive-learning\",\"args\":{\"action\":\"record\",\"content\":\"學習內容...\",\"category\":\"分類\",\"tags\":[\"標籤1\",\"標籤2\"]}}\n{\"action\":\"adaptive-learning\",\"args\":{\"action\":\"recall_records\",\"query\":\"關鍵字\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:chrome-devtools:core-detailed",
+      "lane": "skill",
+      "target": "chrome-devtools",
+      "intent_tags": [
+        "skill",
+        "core",
+        "chrome-devtools"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "[\n  {\n    \"action\": \"mcp_call\",\n    \"server\": \"chrome-devtools\",\n    \"tool\": \"navigate_page\",\n    \"parameters\": {\n      \"url\": \"https://example.com\",\n      \"timeout\": 60000\n    }\n  },\n  {\n    \"action\": \"mcp_call\",\n    \"server\": \"chrome-devtools\",\n    \"tool\": \"take_snapshot\",\n    \"parameters\": {}\n  }\n]",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:chronos:core-detailed",
+      "lane": "skill",
+      "target": "chronos",
+      "intent_tags": [
+        "skill",
+        "core",
+        "chronos"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"collab-calendar\",\"args\":{\"action\":\"add\",\"title\":\"提醒喝水\",\"start\":\"2026-05-14T14:00:00+08:00\",\"end\":\"2026-05-14T14:10:00+08:00\"}}\n{\"action\":\"collab-calendar\",\"args\":{\"action\":\"list\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:cloud:core-detailed",
+      "lane": "skill",
+      "target": "cloud",
+      "intent_tags": [
+        "skill",
+        "core",
+        "cloud"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"cloud\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:code-wizard:core-detailed",
+      "lane": "skill",
+      "target": "code-wizard",
+      "intent_tags": [
+        "skill",
+        "core",
+        "code-wizard"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"code-wizard\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:delegate-task:core-detailed",
+      "lane": "skill",
+      "target": "delegate-task",
+      "intent_tags": [
+        "skill",
+        "core",
+        "delegate-task"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"delegate-task\",\"args\":{\"subtask\":\"請查閱最新 React 19 的文件並總結主要變更\",\"toolset\":\"research\",\"context\":\"目前我們正在升級一個舊的 React 專案\",\"verify_cmd\":\"npm run typecheck\",\"max_retries\":3}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:evolution:core-detailed",
+      "lane": "skill",
+      "target": "evolution",
+      "intent_tags": [
+        "skill",
+        "core",
+        "evolution"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"evolution\",\"args\":{\"file\":\"欲修改的相對路徑\",\"find\":\"欲被替換的精確舊代碼片段\",\"replace\":\"新的代碼片段\"}}\n{\"action\":\"evolution\",\"args\":{\"file\":\"欲修改的相對路徑\",\"content\":\"完整的全新檔案內容\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:git",
+      "lane": "skill",
+      "target": "git",
+      "intent_tags": [
+        "skill",
+        "git"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"git\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    },
+    {
+      "id": "example:skill:image-prompt",
+      "lane": "skill",
+      "target": "image-prompt",
+      "intent_tags": [
+        "skill",
+        "image-prompt"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"image-prompt\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    },
+    {
+      "id": "example:skill:log-archive:core-detailed",
+      "lane": "skill",
+      "target": "log-archive",
+      "intent_tags": [
+        "skill",
+        "core",
+        "log-archive"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\": \"log_archive\", \"date\": \"20260227\"}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:log-reader:core-detailed",
+      "lane": "skill",
+      "target": "log-reader",
+      "intent_tags": [
+        "skill",
+        "core",
+        "log-reader"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\": \"log-reader\", \"args\": {\"task\": \"list\"}}\n{\"action\": \"log-reader\", \"args\": {\"task\": \"get\", \"date\": \"20260227\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:memory:core-detailed",
+      "lane": "skill",
+      "target": "memory",
+      "intent_tags": [
+        "skill",
+        "core",
+        "memory"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"memory\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:moltbot",
+      "lane": "skill",
+      "target": "moltbot",
+      "intent_tags": [
+        "skill",
+        "moltbot"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"moltbot\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    },
+    {
+      "id": "example:skill:multi-agent:core-detailed",
+      "lane": "skill",
+      "target": "multi-agent",
+      "intent_tags": [
+        "skill",
+        "core",
+        "multi-agent"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\": \"multi_agent\", \"preset\": \"TECH_TEAM\", \"task\": \"討論 App 架構\", \"rounds\": 3}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:optic-nerve:core-detailed",
+      "lane": "skill",
+      "target": "optic-nerve",
+      "intent_tags": [
+        "skill",
+        "core",
+        "optic-nerve"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"optic-nerve\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:reference-files:core-detailed",
+      "lane": "skill",
+      "target": "reference-files",
+      "intent_tags": [
+        "skill",
+        "core",
+        "reference-files"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\n  \"action\": \"reference-files\",\n  \"parameters\": {\n    \"task\": \"list\"\n  }\n}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:reflection:core-detailed",
+      "lane": "skill",
+      "target": "reflection",
+      "intent_tags": [
+        "skill",
+        "core",
+        "reflection"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"reflection\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:reincarnate:core-detailed",
+      "lane": "skill",
+      "target": "reincarnate",
+      "intent_tags": [
+        "skill",
+        "core",
+        "reincarnate"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\": \"reincarnate\", \"summary\": \"這裡放你總結的【記憶摘要】\"}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:session-search:core-detailed",
+      "lane": "skill",
+      "target": "session-search",
+      "intent_tags": [
+        "skill",
+        "core",
+        "session-search"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"session-search\",\"args\":{\"query\":\"搜尋關鍵字\",\"mode\":\"keyword\",\"days\":30}}\n{\"action\":\"session-search\",\"args\":{\"query\":\"我問過關於記憶系統的問題\",\"mode\":\"semantic\",\"days\":60}}\n{\"action\":\"session-search\",\"args\":{\"mode\":\"date\",\"start_date\":\"20260401\",\"end_date\":\"20260417\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:spotify",
+      "lane": "skill",
+      "target": "spotify",
+      "intent_tags": [
+        "skill",
+        "spotify"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"spotify\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    },
+    {
+      "id": "example:skill:stock-dashboard:core-detailed",
+      "lane": "skill",
+      "target": "stock-dashboard",
+      "intent_tags": [
+        "skill",
+        "core",
+        "stock-dashboard"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\n  \"action\": \"stock-dashboard\",\n  \"parameters\": {\n    \"symbols\": [\"2330.TW\", \"AAPL\"],\n    \"selectedSymbol\": \"2330.TW\",\n    \"marketFilter\": \"all\",\n    \"selectedRange\": \"1D\",\n    \"includeNews\": true\n  }\n}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:sys-admin:core-detailed",
+      "lane": "skill",
+      "target": "sys-admin",
+      "intent_tags": [
+        "skill",
+        "core",
+        "sys-admin"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"sys-admin\",\"args\":{\"input\":\"請描述要執行的任務\"}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:tool-explorer:core-detailed",
+      "lane": "skill",
+      "target": "tool-explorer",
+      "intent_tags": [
+        "skill",
+        "core",
+        "tool-explorer"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\": \"command\", \"parameter\": \"golem-check python\"}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:wiki:core-detailed",
+      "lane": "skill",
+      "target": "wiki",
+      "intent_tags": [
+        "skill",
+        "core",
+        "wiki"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\n  \"action\": \"wiki\",\n  \"parameters\": {\n    \"task\": \"search\",\n    \"query\": \"關鍵字\"\n  }\n}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:youtube",
+      "lane": "skill",
+      "target": "youtube",
+      "intent_tags": [
+        "skill",
+        "youtube"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"youtube\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    },
+    {
+      "id": "example:skill:stock-checker",
+      "lane": "skill",
+      "target": "stock-checker",
+      "intent_tags": [
+        "skill",
+        "stock-checker"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"stock-checker\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/click",
+      "lane": "mcp",
+      "target": "chrome-devtools/click",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "click"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"click\",\"parameters\":{\"uid\":\"<uid>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/close_page",
+      "lane": "mcp",
+      "target": "chrome-devtools/close_page",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "close_page"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"close_page\",\"parameters\":{\"pageId\":1}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/drag",
+      "lane": "mcp",
+      "target": "chrome-devtools/drag",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "drag"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"drag\",\"parameters\":{\"from_uid\":\"<from_uid>\",\"to_uid\":\"<to_uid>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/emulate",
+      "lane": "mcp",
+      "target": "chrome-devtools/emulate",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "emulate"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"emulate\",\"parameters\":{\"networkConditions\":\"Offline\",\"cpuThrottlingRate\":1,\"geolocation\":\"<geolocation>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/evaluate_script",
+      "lane": "mcp",
+      "target": "chrome-devtools/evaluate_script",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "evaluate_script"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"evaluate_script\",\"parameters\":{\"function\":\"<function>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/fill",
+      "lane": "mcp",
+      "target": "chrome-devtools/fill",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "fill"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"fill\",\"parameters\":{\"uid\":\"<uid>\",\"value\":\"<value>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/fill_form",
+      "lane": "mcp",
+      "target": "chrome-devtools/fill_form",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "fill_form"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"fill_form\",\"parameters\":{\"elements\":[{\"uid\":\"<uid>\",\"value\":\"<value>\"}]}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/get_console_message",
+      "lane": "mcp",
+      "target": "chrome-devtools/get_console_message",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "get_console_message"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"get_console_message\",\"parameters\":{\"msgid\":1}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/get_network_request",
+      "lane": "mcp",
+      "target": "chrome-devtools/get_network_request",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "get_network_request"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"get_network_request\",\"parameters\":{\"reqid\":1,\"requestFilePath\":\"path/to/file\",\"responseFilePath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/handle_dialog",
+      "lane": "mcp",
+      "target": "chrome-devtools/handle_dialog",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "handle_dialog"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"handle_dialog\",\"parameters\":{\"action\":\"accept\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/hover",
+      "lane": "mcp",
+      "target": "chrome-devtools/hover",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "hover"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"hover\",\"parameters\":{\"uid\":\"<uid>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/lighthouse_audit",
+      "lane": "mcp",
+      "target": "chrome-devtools/lighthouse_audit",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "lighthouse_audit"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"lighthouse_audit\",\"parameters\":{\"mode\":\"navigation\",\"device\":\"desktop\",\"outputDirPath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/list_console_messages",
+      "lane": "mcp",
+      "target": "chrome-devtools/list_console_messages",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "list_console_messages"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"list_console_messages\",\"parameters\":{\"pageSize\":1,\"pageIdx\":1,\"types\":[\"log\"]}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/list_network_requests",
+      "lane": "mcp",
+      "target": "chrome-devtools/list_network_requests",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "list_network_requests"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"list_network_requests\",\"parameters\":{\"pageSize\":1,\"pageIdx\":1,\"resourceTypes\":[\"document\"]}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/list_pages",
+      "lane": "mcp",
+      "target": "chrome-devtools/list_pages",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "list_pages"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"list_pages\",\"parameters\":{}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/new_page",
+      "lane": "mcp",
+      "target": "chrome-devtools/new_page",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "new_page"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"new_page\",\"parameters\":{\"url\":\"https://example.com\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/performance_analyze_insight",
+      "lane": "mcp",
+      "target": "chrome-devtools/performance_analyze_insight",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "performance_analyze_insight"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"performance_analyze_insight\",\"parameters\":{\"insightSetId\":\"<insightSetId>\",\"insightName\":\"<insightName>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/performance_start_trace",
+      "lane": "mcp",
+      "target": "chrome-devtools/performance_start_trace",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "performance_start_trace"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"performance_start_trace\",\"parameters\":{\"reload\":true,\"autoStop\":true,\"filePath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/performance_stop_trace",
+      "lane": "mcp",
+      "target": "chrome-devtools/performance_stop_trace",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "performance_stop_trace"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"performance_stop_trace\",\"parameters\":{\"filePath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/press_key",
+      "lane": "mcp",
+      "target": "chrome-devtools/press_key",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "press_key"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"press_key\",\"parameters\":{\"key\":\"<key>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/resize_page",
+      "lane": "mcp",
+      "target": "chrome-devtools/resize_page",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "resize_page"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"resize_page\",\"parameters\":{\"width\":1,\"height\":1}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/select_page",
+      "lane": "mcp",
+      "target": "chrome-devtools/select_page",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "select_page"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"select_page\",\"parameters\":{\"pageId\":1}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/take_memory_snapshot",
+      "lane": "mcp",
+      "target": "chrome-devtools/take_memory_snapshot",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "take_memory_snapshot"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"take_memory_snapshot\",\"parameters\":{\"filePath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/take_screenshot",
+      "lane": "mcp",
+      "target": "chrome-devtools/take_screenshot",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "take_screenshot"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"take_screenshot\",\"parameters\":{\"format\":\"png\",\"quality\":1,\"uid\":\"<uid>\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/take_snapshot",
+      "lane": "mcp",
+      "target": "chrome-devtools/take_snapshot",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "take_snapshot"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"take_snapshot\",\"parameters\":{\"verbose\":false,\"filePath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/type_text",
+      "lane": "mcp",
+      "target": "chrome-devtools/type_text",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "type_text"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"type_text\",\"parameters\":{\"text\":\"Text content\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/upload_file",
+      "lane": "mcp",
+      "target": "chrome-devtools/upload_file",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "upload_file"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"upload_file\",\"parameters\":{\"uid\":\"<uid>\",\"filePath\":\"path/to/file\"}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools/wait_for",
+      "lane": "mcp",
+      "target": "chrome-devtools/wait_for",
+      "intent_tags": [
+        "mcp",
+        "chrome-devtools",
+        "wait_for"
+      ],
+      "error_tags": [
+        "invalid_mcp_call",
+        "unknown_tool"
+      ],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"wait_for\",\"parameters\":{\"text\":[\"Text content\"]}}",
+      "anti_pattern": "mcp_call 必須同時包含 server、tool、parameters。"
+    },
+    {
+      "id": "example:skill:duckduckgo-devtools-bridge:core-detailed",
+      "lane": "skill",
+      "target": "duckduckgo-devtools-bridge",
+      "intent_tags": [
+        "skill",
+        "core",
+        "duckduckgo-devtools-bridge"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"duckduckgo-search\",\"args\":{\"query\":\"台灣 AI 代理 最新政策\",\"limit\":5}}\n[\n  {\n    \"action\": \"mcp_call\",\n    \"server\": \"chrome-devtools\",\n    \"tool\": \"navigate_page\",\n    \"parameters\": {\n      \"url\": \"https://example.com/article\",\n      \"timeout\": 60000\n    }\n  },\n  {\n    \"action\": \"mcp_call\",\n    \"server\": \"chrome-devtools\",\n    \"tool\": \"take_snapshot\",\n    \"parameters\": {}\n  }\n]\n{\n  \"action\": \"mcp_call\",\n  \"server\": \"chrome-devtools\",\n  \"tool\": \"evaluate_script\",\n  \"parameters\": {\n    \"function\": \"() => Array.from(document.querySelectorAll('a')).map(a => ({ title: (a.textContent||'').trim(), url: a.href||'' })).filter(x => x.title && x.url).slice(0, 30)\"\n  }\n}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:duckduckgo-search:core-detailed",
+      "lane": "skill",
+      "target": "duckduckgo-search",
+      "intent_tags": [
+        "skill",
+        "core",
+        "duckduckgo-search"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required",
+        "invalid_json_shape"
+      ],
+      "example": "{\"action\":\"duckduckgo-search\",\"args\":{\"query\":\"2026 台灣 AI 新聞\",\"limit\":8}}",
+      "anti_pattern": "請優先遵循技能內建協議；勿混用 parameters.command，並避免自行發明欄位名稱。"
+    },
+    {
+      "id": "example:skill:notebooklm-studio",
+      "lane": "skill",
+      "target": "notebooklm-studio",
+      "intent_tags": [
+        "skill",
+        "notebooklm-studio"
+      ],
+      "error_tags": [
+        "invalid_field",
+        "missing_required"
+      ],
+      "example": "{\"action\":\"notebooklm-studio\",\"args\":{\"input\":\"...\"}}",
+      "anti_pattern": "請使用 args 物件，避免把參數塞在 parameters.command 或自創欄位。"
+    }
+  ]
+}

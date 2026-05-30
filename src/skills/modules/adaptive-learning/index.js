@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 async function run(ctx) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     const userDataDir = ctx.brain ? ctx.brain.userDataDir : process.cwd();
     const learningsPath = path.join(userDataDir, 'learnings.json');
 

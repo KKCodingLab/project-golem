@@ -17,6 +17,16 @@ class PageInteractor {
         this.doctor = doctor;
     }
 
+    static getLargePayloadThreshold() {
+        const raw = Number(process.env.GOLEM_COMPOSER_CHUNK_THRESHOLD || 12000);
+        return Number.isFinite(raw) && raw > 0 ? raw : 12000;
+    }
+
+    static getComposerInsertChunkSize() {
+        const raw = Number(process.env.GOLEM_COMPOSER_CHUNK_SIZE || 3500);
+        return Number.isFinite(raw) && raw > 0 ? raw : 3500;
+    }
+
     /**
      * 清洗 DOMDoctor 回傳的 Selector 字串
      * @param {string} rawSelector
@@ -33,6 +43,19 @@ class PageInteractor {
             cleaned = cleaned.substring(4).trim();
         }
         return cleaned;
+    }
+
+    static getComposerSelectors() {
+        return [
+            '.ProseMirror',
+            '.ql-editor',
+            'rich-textarea .ProseMirror',
+            'rich-textarea .ql-editor',
+            'rich-textarea div[contenteditable="true"]',
+            'div[role="textbox"][contenteditable="true"]',
+            'div[contenteditable="true"]',
+            'textarea'
+        ];
     }
 
     /**
@@ -52,7 +75,7 @@ class PageInteractor {
             }
 
             // 0. 確保頁面處於空閒狀態 (避免前一則訊息還在發送中)
-            await this._waitForReady(selectors.send);
+            await this._waitForReady(selectors.send, options);
 
             // 1. 捕獲基準文字
             const baseline = await this._captureBaseline(selectors.response);
@@ -69,7 +92,12 @@ class PageInteractor {
             await new Promise(r => setTimeout(r, TIMINGS.INPUT_DELAY));
 
             // 4. 發送訊息 (使用物理 Enter 爆破法)
-            await this._clickSend(selectors.send);
+            await this._clickSend(selectors.send, {
+                responseSelector: selectors.response,
+                baseline,
+                startTag,
+                payloadLength: String(payload || '').length
+            });
 
             // 5. 若為系統訊息，延遲後直接返回
             if (isSystem) {
@@ -91,7 +119,7 @@ class PageInteractor {
             if (finalResponse.status === 'TIMEOUT') {
                 const timedOutText = String(finalResponse.text || '').trim();
                 const hasStartedEnvelope = timedOutText.includes(startTag) || /\[\[?BEGIN\s*:/i.test(timedOutText);
-                if (!options.allowPartialOnTimeout || !hasStartedEnvelope) {
+                if (!hasStartedEnvelope && !options.allowPartialOnTimeout) {
                     throw new Error("等待回應超時");
                 }
                 finalResponse.status = 'ENVELOPE_TIMEOUT_PARTIAL';
@@ -158,13 +186,7 @@ class PageInteractor {
      */
     async _typeInput(inputSelector, text) {
         // 🚀 定義網頁原生文字編輯器的通用特徵 (無視 class 改變)
-        const fallbackSelectors = [
-            '.ProseMirror',
-            'rich-textarea',
-            'div[role="textbox"][contenteditable="true"]',
-            'div[contenteditable="true"]',
-            'textarea'
-        ];
+        const fallbackSelectors = PageInteractor.getComposerSelectors();
 
         let targetSelector = inputSelector;
 
@@ -227,12 +249,17 @@ class PageInteractor {
 
         // 1. 先使用 page.focus 確保焦點在輸入框上
         try {
-            if (typeof this.page.focus === 'function') {
-                await this.page.focus(targetSelector);
+            const focusedComposer = await this._focusBestComposer(targetSelector);
+            if (focusedComposer && focusedComposer.ok && Number.isFinite(focusedComposer.x) && Number.isFinite(focusedComposer.y) && this.page.mouse) {
+                await this.page.mouse.click(focusedComposer.x, focusedComposer.y);
+            } else {
+                if (typeof this.page.focus === 'function') {
+                    await this.page.focus(targetSelector);
+                }
+                await inputEl.scrollIntoViewIfNeeded(); // [Playwright 強化] 確保在可視區域
+                await inputEl.click({ delay: 50 });    // [強化] 點擊一下以確保真實 Focus
+                await inputEl.focus();
             }
-            await inputEl.scrollIntoViewIfNeeded(); // [Playwright 強化] 確保在可視區域
-            await inputEl.click({ delay: 50 });    // [強化] 點擊一下以確保真實 Focus
-            await inputEl.focus();
             await new Promise(r => setTimeout(r, 300)); // 給予瀏覽器反應時間
             
             // 🧹 清除可能殘留的舊內容
@@ -246,152 +273,934 @@ class PageInteractor {
             console.warn(`⚠️ [PageInteractor] focus 失敗: ${e.message}`);
         }
 
-        // 2. 模擬真實鍵盤輸入 (對於 ProseMirror 這種複雜編輯器，這比單純塞 value 更好)
-        // 為了效能與穩定平衡，我們先用 evaluate 注入大塊內容，再模擬鍵盤觸發事件
-        await this.page.evaluate(({ s, t }) => {
-            const el = document.querySelector(s);
-            if (!el) return;
+        let insertState = null;
+        const minimumExpectedLength = Math.min(10, textToPaste.trim().length);
+        const shouldChunkInsert = payloadLength > PageInteractor.getLargePayloadThreshold();
 
-            // 針對 contenteditable 使用更強大的模擬植入
-            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-                el.value = t;
-                const valueSetter = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value')?.set;
-                if (valueSetter) valueSetter.call(el, t);
-            } else {
-                el.innerText = t;
-                el.textContent = t;
+        // 2. 優先使用 Playwright fill() 對 contenteditable 寫入。這會走瀏覽器原生
+        // input/change 事件，比單純把文字塞進 DOM 更容易讓 Gemini 啟用送出鈕。
+        try {
+            if (!shouldChunkInsert && this.page.locator && textToPaste.length > 0) {
+                const activeComposer = this.page.locator('[data-golem-active-composer="true"]').last();
+                await activeComposer.fill(textToPaste, { timeout: 15000 });
+                const fillState = await this._readComposerState('[data-golem-active-composer="true"]');
+                if (fillState && fillState.ok && fillState.length >= minimumExpectedLength) {
+                    insertState = {
+                        ...fillState,
+                        method: 'locator-fill'
+                    };
+                } else {
+                    console.warn(`⚠️ [PageInteractor] locator.fill 後 composer 狀態不完整，改用鍵盤輸入補強。`);
+                }
+            }
+        } catch (e) {
+            console.warn(`⚠️ [PageInteractor] locator.fill 失敗: ${e.message}`);
+        }
+
+        // 3. 使用 Playwright 的真實文字輸入通道。這比 DOM 改字更能啟用
+        // Gemini/ProseMirror 的 send button，尤其是 RPG/股市分析這種長 prompt。
+        try {
+            if (this.page.keyboard && typeof this.page.keyboard.insertText === 'function') {
+                if (!insertState) {
+                    if (shouldChunkInsert) {
+                        const chunkSize = PageInteractor.getComposerInsertChunkSize();
+                        const totalChunks = Math.max(1, Math.ceil(textToPaste.length / chunkSize));
+                        const startedAt = Date.now();
+                        const progressInterval = Math.max(1, Math.floor(totalChunks / 8));
+                        console.log(`⏳ [PageInteractor] AI 正在讀取長文本 ${textToPaste.length} 字，共分 ${totalChunks} 段。`);
+                        for (let idx = 0; idx < totalChunks; idx += 1) {
+                            const start = idx * chunkSize;
+                            const end = Math.min(textToPaste.length, start + chunkSize);
+                            const chunk = textToPaste.slice(start, end);
+                            await this.page.keyboard.insertText(chunk);
+                            if (idx === 0 || idx === totalChunks - 1 || (idx + 1) % progressInterval === 0) {
+                                const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+                                console.log(`⏳ [PageInteractor] AI 正在讀取長文本 ${textToPaste.length} 字，共分 ${totalChunks} 段，目前第 ${idx + 1} 段 (${elapsed}s)。`);
+                            }
+                            if (idx < totalChunks - 1) {
+                                await new Promise(r => setTimeout(r, 20));
+                            }
+                        }
+                        console.log(`✅ [PageInteractor] 長文本讀取完成，共 ${textToPaste.length} 字 / ${totalChunks} 段。`);
+                    } else {
+                        await this.page.keyboard.insertText(textToPaste);
+                    }
+                }
+                const keyboardState = await this._readComposerState(targetSelector);
+                if (!insertState && keyboardState && keyboardState.ok && keyboardState.length >= minimumExpectedLength) {
+                    insertState = {
+                        ...keyboardState,
+                        method: 'keyboard-insertText'
+                    };
+                } else if (!insertState) {
+                    console.warn(`⚠️ [PageInteractor] keyboard.insertText 後 composer 狀態不完整，改用 DOM 貼上補強。`);
+                }
+            }
+        } catch (e) {
+            console.warn(`⚠️ [PageInteractor] keyboard.insertText 失敗: ${e.message}`);
+        }
+
+        // 4. Fallback：模擬真實貼上，而不是只改 innerText。Gemini 的 rich-textarea/ProseMirror
+        // 需要 paste/input 事件更新內部狀態，否則畫面有草稿但送出鈕不會啟用。
+        if (!insertState) {
+            insertState = await this.page.evaluate(({ s, t, fallbacks }) => {
+            const visible = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return false;
+                const style = window.getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+
+            const isEditable = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return false;
+                const tag = node.tagName;
+                return tag === 'TEXTAREA' ||
+                    tag === 'INPUT' ||
+                    node.isContentEditable ||
+                    node.getAttribute('role') === 'textbox' ||
+                    node.classList.contains('ProseMirror') ||
+                    node.classList.contains('ql-editor');
+            };
+
+            const collect = (selector) => {
+                if (!selector) return [];
+                try {
+                    return Array.from(document.querySelectorAll(selector));
+                } catch (_) {
+                    return [];
+                }
+            };
+
+            const roots = [
+                ...collect(s),
+                ...fallbacks.flatMap(collect)
+            ];
+            const candidates = [];
+            const addCandidate = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return;
+                if (isEditable(node)) candidates.push(node);
+                if (node.querySelectorAll) {
+                    candidates.push(...Array.from(node.querySelectorAll(fallbacks.join(', '))).filter(isEditable));
+                }
+            };
+            roots.forEach(addCandidate);
+
+            const unique = Array.from(new Set(candidates)).filter(visible);
+            unique.sort((a, b) => {
+                const ar = a.getBoundingClientRect();
+                const br = b.getBoundingClientRect();
+                return (br.top - ar.top) || (br.left - ar.left);
+            });
+
+            const el = unique[0];
+            if (!el) return { ok: false, reason: 'editable-not-found' };
+
+            const tagName = el.tagName;
+            const isTextInput = tagName === 'TEXTAREA' || tagName === 'INPUT';
+            el.focus();
+
+            const dispatchInput = (inputType, data = null) => {
+                try {
+                    el.dispatchEvent(new InputEvent('beforeinput', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType,
+                        data
+                    }));
+                } catch (_) { }
+                try {
+                    el.dispatchEvent(new InputEvent('input', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType,
+                        data
+                    }));
+                } catch (_) {
+                    el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                }
+                el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+                el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'Unidentified' }));
+            };
+
+            const selectAllEditable = () => {
+                if (isTextInput) {
+                    el.setSelectionRange(0, el.value.length);
+                    return;
+                }
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            };
+
+            if (isTextInput) {
+                const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set;
+                if (setter) setter.call(el, '');
+                else el.value = '';
+                dispatchInput('deleteContentBackward');
+                if (setter) setter.call(el, t);
+                else el.value = t;
+                dispatchInput('insertFromPaste', t);
+                return {
+                    ok: true,
+                    method: 'native-value',
+                    tagName,
+                    length: el.value.length
+                };
             }
 
-            // ⚡ 強制觸發事件，讓 React/Angular/ProseMirror 知道內容變了
-            const inputEvent = new InputEvent('input', {
-                bubbles: true,
-                cancelable: true,
-                inputType: 'insertText',
-                data: t
-            });
-            el.dispatchEvent(inputEvent);
-
-            const events = ['beforeinput', 'change', 'keyup'];
-            events.forEach(name => {
-                const event = new Event(name, { bubbles: true, cancelable: true });
-                el.dispatchEvent(event);
-            });
-
-            // 確保游標在最後
             try {
-                if (el.tagName !== 'TEXTAREA' && el.tagName !== 'INPUT') {
-                    const range = document.createRange();
-                    const sel = window.getSelection();
-                    range.selectNodeContents(el);
-                    range.collapse(false);
-                    sel.removeAllRanges();
-                    sel.addRange(range);
+                selectAllEditable();
+                document.execCommand('delete', false);
+            } catch (_) { }
+
+            let pasteHandled = false;
+            try {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.setData('text/plain', t);
+                const pasteEvent = new ClipboardEvent('paste', {
+                    clipboardData: dataTransfer,
+                    bubbles: true,
+                    cancelable: true
+                });
+                pasteHandled = !el.dispatchEvent(pasteEvent) || pasteEvent.defaultPrevented;
+            } catch (_) { }
+
+            const currentTextAfterPaste = (el.innerText || el.textContent || '').trim();
+            if (!currentTextAfterPaste || currentTextAfterPaste.length < Math.min(10, t.trim().length)) {
+                try {
+                    selectAllEditable();
+                    const inserted = document.execCommand('insertText', false, t);
+                    if (!inserted) {
+                        el.textContent = t;
+                    }
+                } catch (_) {
+                    el.textContent = t;
                 }
-            } catch (e) { }
-        }, { s: targetSelector, t: textToPaste });
+                dispatchInput('insertFromPaste', t);
+            } else {
+                dispatchInput('insertFromPaste', t);
+            }
+
+            try {
+                const range = document.createRange();
+                const selection = window.getSelection();
+                range.selectNodeContents(el);
+                range.collapse(false);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } catch (_) { }
+
+            return {
+                ok: true,
+                method: pasteHandled ? 'paste-event' : 'exec-command',
+                tagName,
+                role: el.getAttribute('role') || '',
+                className: el.className || '',
+                length: (el.innerText || el.textContent || '').length
+            };
+            }, { s: targetSelector, t: textToPaste, fallbacks: fallbackSelectors });
+        }
+
+        if (!insertState || !insertState.ok) {
+            throw new Error(`無法植入文字到 Gemini 輸入框: ${insertState?.reason || 'unknown'}`);
+        }
+        console.log(`✅ [PageInteractor] 文字已植入 Gemini composer (${insertState.method}, ${insertState.tagName}, length=${insertState.length}).`);
 
         // 3. 額外觸發一個小的鍵盤事件，確保某些框架監聽的 focus/input 狀態被啟動
         await this.page.keyboard.type(' ', { delay: 1 });
         await this.page.keyboard.press('Backspace');
     }
 
-    async _clickSend(sendSelector) {
-        // 1. Enter 爆破 (確保焦點在輸入框，而非按鈕)
-        try {
-            const fallbackSelectors = [
-                '.ProseMirror',
-                'rich-textarea',
-                'div[role="textbox"][contenteditable="true"]',
-                'div[contenteditable="true"]',
-                'textarea'
+    async _focusBestComposer(inputSelector) {
+        return this.page.evaluate(({ s, fallbacks }) => {
+            const visible = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return false;
+                const style = window.getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const isEditable = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return false;
+                const tag = node.tagName;
+                return tag === 'TEXTAREA' ||
+                    tag === 'INPUT' ||
+                    node.isContentEditable ||
+                    node.getAttribute('role') === 'textbox' ||
+                    node.classList.contains('ProseMirror') ||
+                    node.classList.contains('ql-editor');
+            };
+            const collect = (selector) => {
+                if (!selector) return [];
+                try {
+                    return Array.from(document.querySelectorAll(selector));
+                } catch (_) {
+                    return [];
+                }
+            };
+            const roots = [
+                ...collect(s),
+                ...fallbacks.flatMap(collect)
             ];
-            const inputEl = await this.page.$(fallbackSelectors.join(', '));
-            if (inputEl) {
-                await inputEl.focus();
-                await new Promise(r => setTimeout(r, 100));
+            const candidates = [];
+            const addCandidate = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return;
+                if (isEditable(node)) candidates.push(node);
+                if (node.querySelectorAll) {
+                    candidates.push(...Array.from(node.querySelectorAll(fallbacks.join(', '))).filter(isEditable));
+                }
+            };
+            roots.forEach(addCandidate);
+            const unique = Array.from(new Set(candidates)).filter(visible);
+            unique.sort((a, b) => {
+                const ar = a.getBoundingClientRect();
+                const br = b.getBoundingClientRect();
+                return (br.top - ar.top) || (br.left - ar.left);
+            });
+            const el = unique[0];
+            if (!el) return { ok: false, reason: 'editable-not-found' };
+            document.querySelectorAll('[data-golem-active-composer="true"]').forEach((node) => {
+                node.removeAttribute('data-golem-active-composer');
+            });
+            el.setAttribute('data-golem-active-composer', 'true');
+            el.scrollIntoView({ block: 'center', inline: 'center' });
+            el.focus();
+            const rect = el.getBoundingClientRect();
+            return {
+                ok: true,
+                tagName: el.tagName,
+                className: el.className || '',
+                role: el.getAttribute('role') || '',
+                x: rect.left + Math.min(rect.width / 2, 24),
+                y: rect.top + rect.height / 2
+            };
+        }, { s: inputSelector, fallbacks: PageInteractor.getComposerSelectors() }).catch((error) => ({
+            ok: false,
+            reason: error.message
+        }));
+    }
+
+    async _readComposerState(inputSelector) {
+        return this.page.evaluate(({ s, fallbacks }) => {
+            const visible = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return false;
+                const style = window.getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const isEditable = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return false;
+                const tag = node.tagName;
+                return tag === 'TEXTAREA' ||
+                    tag === 'INPUT' ||
+                    node.isContentEditable ||
+                    node.getAttribute('role') === 'textbox' ||
+                    node.classList.contains('ProseMirror') ||
+                    node.classList.contains('ql-editor');
+            };
+            const textOf = (node) => {
+                if (!node) return '';
+                if (node.tagName === 'TEXTAREA' || node.tagName === 'INPUT') return node.value || '';
+                return node.innerText || node.textContent || '';
+            };
+            const collect = (selector) => {
+                if (!selector) return [];
+                try {
+                    return Array.from(document.querySelectorAll(selector));
+                } catch (_) {
+                    return [];
+                }
+            };
+            const roots = [
+                ...collect(s),
+                ...fallbacks.flatMap(collect)
+            ];
+            const candidates = [];
+            const addCandidate = (node) => {
+                if (!node || !(node instanceof HTMLElement)) return;
+                if (isEditable(node)) candidates.push(node);
+                if (node.querySelectorAll) {
+                    candidates.push(...Array.from(node.querySelectorAll(fallbacks.join(', '))).filter(isEditable));
+                }
+            };
+            roots.forEach(addCandidate);
+            const unique = Array.from(new Set(candidates)).filter(visible);
+            unique.sort((a, b) => {
+                const ar = a.getBoundingClientRect();
+                const br = b.getBoundingClientRect();
+                return (br.top - ar.top) || (br.left - ar.left);
+            });
+            const el = unique[0];
+            if (!el) return { ok: false, reason: 'editable-not-found', length: 0 };
+            return {
+                ok: true,
+                tagName: el.tagName,
+                className: el.className || '',
+                role: el.getAttribute('role') || '',
+                length: textOf(el).length
+            };
+        }, { s: inputSelector, fallbacks: PageInteractor.getComposerSelectors() }).catch((error) => ({
+            ok: false,
+            reason: error.message,
+            length: 0
+        }));
+    }
+
+    async _waitForSendButtonEnabled(timeoutMs = 5000) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+            const ready = await this.page.evaluate(() => {
+                const visible = (node) => {
+                    if (!node || !(node instanceof HTMLElement)) return false;
+                    const style = window.getComputedStyle(node);
+                    const rect = node.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                };
+                const editorSelector = [
+                    '.ProseMirror',
+                    '.ql-editor',
+                    'rich-textarea .ProseMirror',
+                    'rich-textarea .ql-editor',
+                    'rich-textarea div[contenteditable="true"]',
+                    'div[role="textbox"][contenteditable="true"]',
+                    'div[contenteditable="true"]',
+                    'textarea'
+                ].join(', ');
+                const editors = Array.from(document.querySelectorAll(editorSelector)).filter(visible);
+                editors.sort((a, b) => {
+                    const ar = a.getBoundingClientRect();
+                    const br = b.getBoundingClientRect();
+                    return (br.bottom - ar.bottom) || (br.left - ar.left);
+                });
+                const composer = editors[0] || null;
+                if (!composer) return false;
+                const inputRect = composer.getBoundingClientRect();
+                const buttons = Array.from(document.querySelectorAll('button, [role="button"], [aria-label], [title]')).filter(visible);
+                return buttons.some((button) => {
+                    const label = [
+                        button.getAttribute('aria-label'),
+                        button.getAttribute('title'),
+                        button.getAttribute('data-tooltip'),
+                        button.innerText,
+                        button.textContent
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    const explicitSend = label.includes('傳送訊息') ||
+                        label.includes('送出訊息') ||
+                        label.includes('發送訊息') ||
+                        label.includes('send message') ||
+                        label.includes('submit message');
+                    if (!explicitSend) return false;
+                    if (button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
+                    const rect = button.getBoundingClientRect();
+                    const centerY = rect.top + rect.height / 2;
+                    return centerY >= inputRect.top - 120 && centerY <= inputRect.bottom + 160;
+                });
+            }).catch(() => false);
+            if (ready) return true;
+            await new Promise(r => setTimeout(r, 250));
+        }
+        return false;
+    }
+
+    async _clickSend(sendSelector, options = {}) {
+        // 1. 確保焦點回到底部 Gemini composer，而不是頁面上的舊 editable。
+        try {
+            const focusedComposer = await this._focusBestComposer(PageInteractor.getComposerSelectors().join(', '));
+            if (focusedComposer && focusedComposer.ok && Number.isFinite(focusedComposer.x) && Number.isFinite(focusedComposer.y) && this.page.mouse) {
+                await this.page.mouse.click(focusedComposer.x, focusedComposer.y);
             }
+            await new Promise(r => setTimeout(r, 100));
         } catch (e) { }
 
         // 防止 Enter 太快，給予輸入框更新時間
         await new Promise(r => setTimeout(r, 500));
-        await this.page.keyboard.press('Enter');
+        const dynamicTimeout = this._computeSendAcceptTimeout(options.payloadLength, options.sendAcceptTimeoutMs);
+        const sendOptions = {
+            ...options,
+            sendAcceptTimeoutMs: dynamicTimeout
+        };
+        const sendTarget = await this._tryClickSendButton(sendSelector);
 
-        // 2. 實體按鈕補強：Gemini 的送出按鈕 label 會隨語系和 UI 版本改動。
-        const sendTarget = await this.page.evaluate((s) => {
-            const stopWords = ['停止', 'Stop', '中斷', 'キャンセル', '停止生成'];
-            const sendWords = ['發送', '傳送', '送出', '提交', 'Send', 'Submit', '送信', '送る'];
-            const visible = (el) => {
-                const style = window.getComputedStyle(el);
-                const rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-            };
-            const scoreButton = (btn) => {
-                if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true' || !visible(btn)) return -1;
-                const label = [
-                    btn.getAttribute('aria-label'),
-                    btn.getAttribute('title'),
-                    btn.innerText,
-                    btn.textContent,
-                    btn.getAttribute('data-tooltip')
-                ].filter(Boolean).join(' ').trim();
-                if (stopWords.some(word => label.includes(word))) return -1;
-                if (sendWords.some(word => label.includes(word))) return 100;
-
-                const rect = btn.getBoundingClientRect();
-                const textbox = document.querySelector('.ProseMirror, rich-textarea, div[role="textbox"][contenteditable="true"], div[contenteditable="true"], textarea');
-                if (textbox) {
-                    const inputRect = textbox.getBoundingClientRect();
-                    const nearInput = Math.abs(rect.bottom - inputRect.bottom) < 140 && rect.left > inputRect.left;
-                    const iconOnly = label.length <= 20 && rect.width <= 72 && rect.height <= 72;
-                    if (nearInput && iconOnly) return 50;
-                }
-
-                return -1;
-            };
-
-            const explicit = document.querySelector('button[aria-label*="發送"], button[aria-label*="傳送"], button[aria-label*="送出"], button[aria-label*="提交"], button[aria-label*="Send"], button[aria-label*="Submit"], button[aria-label*="送信"]')
-                || (s ? document.querySelector(s) : null);
-            const candidates = [
-                explicit,
-                ...Array.from(document.querySelectorAll('button'))
-            ].filter(Boolean);
-
-            let best = null;
-            let bestScore = -1;
-            for (const btn of candidates) {
-                const score = scoreButton(btn);
-                if (score > bestScore) {
-                    best = btn;
-                    bestScore = score;
-                }
-            }
-
-            if (!best || bestScore < 0) return { clicked: false };
-            best.scrollIntoView({ block: 'center', inline: 'center' });
-            const rect = best.getBoundingClientRect();
-            best.focus();
-            best.click();
-            return {
-                clicked: true,
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2
-            };
-        }, sendSelector);
-
-        if (sendTarget && sendTarget.clicked && Number.isFinite(sendTarget.x) && Number.isFinite(sendTarget.y)) {
-            try {
-                await this.page.mouse.click(sendTarget.x, sendTarget.y);
-            } catch (e) {
-                console.warn(`⚠️ [PageInteractor] 滑鼠點擊送出按鈕失敗: ${e.message}`);
-            }
+        if (!sendTarget || !sendTarget.clicked) {
+            await this._pressSubmitKeys();
+            console.warn(`⚠️ [PageInteractor] 找不到可點擊的送出按鈕，已嘗試鍵盤送出。${sendTarget?.diagnostics ? ` 候選: ${sendTarget.diagnostics}` : ''}`);
         } else {
-            console.warn("⚠️ [PageInteractor] 找不到可點擊的送出按鈕，已嘗試 Enter 送出。");
+            console.log(`🎯 [PageInteractor] 找到送出候選按鈕 score=${sendTarget.score || 0} label="${sendTarget.label || ''}"`);
+            await this._performSendClick(sendTarget);
+        }
+
+        const accepted = await this._waitForSendAccepted(sendOptions);
+        if (!accepted) {
+            console.warn("⚠️ [PageInteractor] Gemini 草稿尚未送出，進行第二次送出補強。");
+            const retryTarget = await this._tryClickSendButton(sendSelector);
+            if (!retryTarget || !retryTarget.clicked) {
+                await this._pressSubmitKeys();
+            } else {
+                console.log(`🎯 [PageInteractor] 第二次送出候選按鈕 score=${retryTarget.score || 0} label="${retryTarget.label || ''}"`);
+                await this._performSendClick(retryTarget);
+                await this._focusBestComposer(PageInteractor.getComposerSelectors().join(', ')).catch(() => null);
+            }
+            const retryAccepted = await this._waitForSendAccepted(sendOptions);
+            if (!retryAccepted) {
+                throw new Error("Gemini 草稿未送出：已植入文字，但送出按鈕沒有啟用或訊息沒有離開輸入框。");
+            }
+        }
+        let draftState = await this._inspectComposerDraftState(options.startTag || '').catch(() => ({ hasDraft: false, length: 0, hasStartTag: false }));
+        if (draftState.hasDraft) {
+            console.warn(`⚠️ [PageInteractor] 偵測到草稿仍在輸入框（len=${draftState.length}, startTag=${draftState.hasStartTag}），執行第三次送出補強。`);
+            const thirdTarget = await this._tryClickSendButton(sendSelector);
+            if (!thirdTarget || !thirdTarget.clicked) {
+                await this._pressSubmitKeys();
+            } else {
+                console.log(`🎯 [PageInteractor] 第三次送出候選按鈕 score=${thirdTarget.score || 0} label="${thirdTarget.label || ''}"`);
+                await this._performSendClick(thirdTarget);
+            }
+            await new Promise(r => setTimeout(r, 300));
+            draftState = await this._inspectComposerDraftState(options.startTag || '').catch(() => ({ hasDraft: false, length: 0, hasStartTag: false }));
+            if (draftState.hasDraft) {
+                throw new Error(`Gemini 草稿未送出：輸入框仍殘留內容（len=${draftState.length}, startTag=${draftState.hasStartTag}）。`);
+            }
         }
 
         // 3. 自動置底 (最小化干擾)
         await this._moveWindowToBottom();
 
         await new Promise(r => setTimeout(r, 200));
+    }
+
+    async _inspectComposerDraftState(startTag = '') {
+        return this.page.evaluate(({ sTag }) => {
+            const editorSelector = [
+                '.ProseMirror',
+                '.ql-editor',
+                'rich-textarea .ProseMirror',
+                'rich-textarea .ql-editor',
+                'rich-textarea div[contenteditable="true"]',
+                'div[role="textbox"][contenteditable="true"]',
+                'div[contenteditable="true"]',
+                'textarea'
+            ].join(', ');
+            const visible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const textOf = (el) => {
+                if (!el) return '';
+                if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value || '';
+                return el.innerText || el.textContent || '';
+            };
+            const editors = Array.from(document.querySelectorAll(editorSelector)).filter(visible);
+            editors.sort((a, b) => {
+                const ar = a.getBoundingClientRect();
+                const br = b.getBoundingClientRect();
+                return (br.bottom - ar.bottom) || (br.left - ar.left);
+            });
+            const text = textOf(editors[0] || null).trim();
+            const hasStartTag = Boolean(sTag && text.includes(sTag));
+            const hasAnyBegin = /\[\[?BEGIN\s*:/i.test(text);
+            const hasDraft = hasStartTag || hasAnyBegin || text.length > 80;
+            return {
+                hasDraft,
+                hasStartTag,
+                length: text.length
+            };
+        }, { sTag: startTag || '' });
+    }
+
+    async _pressSubmitKeys() {
+        try {
+            const focusedComposer = await this._focusBestComposer(PageInteractor.getComposerSelectors().join(', '));
+            if (focusedComposer && focusedComposer.ok && Number.isFinite(focusedComposer.x) && Number.isFinite(focusedComposer.y) && this.page.mouse) {
+                await this.page.mouse.click(focusedComposer.x, focusedComposer.y);
+                await new Promise(r => setTimeout(r, 80));
+            }
+        } catch (_) { }
+
+        const submitCombos = process.platform === 'darwin'
+            ? ['Enter', 'Meta+Enter', 'Control+Enter']
+            : ['Enter', 'Control+Enter'];
+        for (const combo of submitCombos) {
+            await this.page.keyboard.press(combo).catch(() => {});
+            await new Promise(r => setTimeout(r, 180));
+        }
+    }
+
+    async _performSendClick(sendTarget) {
+        if (!sendTarget || !Number.isFinite(sendTarget.x) || !Number.isFinite(sendTarget.y)) return;
+        try {
+            if (this.page.mouse && typeof this.page.mouse.click === 'function') {
+                await this.page.mouse.click(sendTarget.x, sendTarget.y);
+            } else {
+                await this.page.evaluate(({ x, y }) => {
+                    const target = document.elementFromPoint(x, y);
+                    if (target && typeof target.click === 'function') target.click();
+                }, { x: sendTarget.x, y: sendTarget.y });
+            }
+        } catch (e) {
+            console.warn(`⚠️ [PageInteractor] 點擊送出按鈕失敗: ${e.message}`);
+        }
+    }
+
+    async _tryClickSendButton(sendSelector) {
+        return this.page.evaluate((s) => {
+            const stopWords = ['停止', 'Stop', '中斷', 'キャンセル', '停止生成', 'stop generating'];
+            const sendWords = ['發送', '傳送', '送出', '提交', 'Send', 'Submit', '送信', '送る', 'send message'];
+            const editorSelector = [
+                '.ProseMirror',
+                '.ql-editor',
+                'rich-textarea .ProseMirror',
+                'rich-textarea .ql-editor',
+                'rich-textarea div[contenteditable="true"]',
+                'div[role="textbox"][contenteditable="true"]',
+                'div[contenteditable="true"]',
+                'textarea'
+            ].join(', ');
+            const visible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const labelFor = (btn) => [
+                btn.getAttribute('aria-label'),
+                btn.getAttribute('title'),
+                btn.getAttribute('data-tooltip'),
+                btn.getAttribute('data-test-id'),
+                btn.innerText,
+                btn.textContent
+            ].filter(Boolean).join(' ').trim();
+            const findComposer = () => Array.from(document.querySelectorAll(editorSelector))
+                .filter(visible)
+                .sort((a, b) => {
+                    const ar = a.getBoundingClientRect();
+                    const br = b.getBoundingClientRect();
+                    return (br.bottom - ar.bottom) || (br.left - ar.left);
+                })[0] || null;
+            const isNavigationButton = (btn, lowerLabel) => {
+                const navRoot = btn.closest('nav, aside, mat-sidenav, [role="navigation"], .side-nav, .sidenav, .mat-drawer, .mat-sidenav, .navigation');
+                if (navRoot) return true;
+                return lowerLabel.includes('主選單') ||
+                    lowerLabel.includes('main menu') ||
+                    lowerLabel.includes('side-nav') ||
+                    lowerLabel.includes('side nav') ||
+                    lowerLabel.includes('sidenav') ||
+                    lowerLabel.includes('menu button') ||
+                    lowerLabel.includes('選單');
+            };
+            const nearComposer = (btn, composer) => {
+                if (!composer) return false;
+                const rect = btn.getBoundingClientRect();
+                const inputRect = composer.getBoundingClientRect();
+                const buttonCenterY = rect.top + rect.height / 2;
+                const inputCenterY = inputRect.top + inputRect.height / 2;
+                const yTolerance = Math.max(140, inputRect.height + 80);
+                return Math.abs(buttonCenterY - inputCenterY) <= yTolerance &&
+                    rect.left >= inputRect.left - 24 &&
+                    rect.top <= inputRect.bottom + 120 &&
+                    rect.bottom >= inputRect.top - 120;
+            };
+            const utilityWords = [
+                '工具', 'tool', 'tools', 'mic', 'microphone', 'voice', '語音', '麥克風',
+                'attach', 'attachment', 'upload', '上傳', '附件', '新增', 'add',
+                '更多', 'more', 'menu', '選單', 'image', '圖片', '檔案'
+            ];
+            const describeIcon = (btn) => [
+                btn.getAttribute('data-icon'),
+                btn.getAttribute('data-mat-icon-name'),
+                btn.getAttribute('fonticon'),
+                btn.getAttribute('icon'),
+                btn.className,
+                btn.querySelector && btn.querySelector('mat-icon') ? btn.querySelector('mat-icon').textContent : '',
+                btn.querySelector && btn.querySelector('[data-icon]') ? btn.querySelector('[data-icon]').getAttribute('data-icon') : '',
+                btn.innerHTML
+            ].filter(Boolean).join(' ');
+            const scoreButton = (btn) => {
+                if (!btn || btn.disabled || btn.getAttribute('aria-disabled') === 'true' || !visible(btn)) return -1;
+                const label = labelFor(btn);
+                const lowerLabel = label.toLowerCase();
+                if (stopWords.some(word => lowerLabel.includes(word.toLowerCase()))) return -1;
+                const rect = btn.getBoundingClientRect();
+                const composer = findComposer();
+                const nearInput = nearComposer(btn, composer);
+                if (isNavigationButton(btn, lowerLabel)) return -1;
+                if (utilityWords.some(word => lowerLabel.includes(word.toLowerCase()))) return -1;
+
+                const explicitSend = lowerLabel.includes('send message') ||
+                    lowerLabel.includes('傳送訊息') ||
+                    lowerLabel.includes('送出訊息') ||
+                    lowerLabel.includes('發送訊息') ||
+                    lowerLabel.includes('submit message');
+                const genericSend = sendWords.some(word => lowerLabel.includes(word.toLowerCase()));
+                const iconDescription = describeIcon(btn);
+                const iconLooksLikeSend = /paper-plane|arrow[_-]?upward|send|send[_-]?button|sendicon|send-icon/i.test(iconDescription) ||
+                    /<mat-icon[^>]*>\s*(send|arrow_upward)\s*<\/mat-icon>/i.test(iconDescription);
+                const iconOnly = label.length <= 48 && rect.width <= 88 && rect.height <= 88;
+                let rightEdgeCandidate = false;
+                if (composer) {
+                    const inputRect = composer.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    rightEdgeCandidate = centerX >= inputRect.right - 160 &&
+                        centerX <= inputRect.right + 220 &&
+                        centerY >= inputRect.top - 80 &&
+                        centerY <= inputRect.bottom + 120;
+                }
+
+                if (explicitSend && nearInput) return 150;
+                if (explicitSend) return 100;
+                if (genericSend && nearInput) return 120;
+                if (nearInput && iconOnly && iconLooksLikeSend) return 90;
+                if (nearInput && rightEdgeCandidate && iconOnly && !label) return 60;
+
+                return -1;
+            };
+
+            let explicit = null;
+            try {
+                explicit = (s ? document.querySelector(s) : null);
+            } catch (_) { }
+            const candidates = [
+                explicit,
+                ...Array.from(document.querySelectorAll('button, [role="button"], [aria-label], [title], [data-tooltip], [data-test-id], span[data-icon]'))
+            ].filter(Boolean).map((node) => {
+                if (!(node instanceof HTMLElement)) return null;
+                return node.closest('button, [role="button"], [aria-label], [title], [data-tooltip], [data-test-id]') || node;
+            }).filter(Boolean);
+            const uniqueCandidates = Array.from(new Set(candidates));
+
+            let best = null;
+            let bestScore = -1;
+            let bestLabel = '';
+            const diagnostics = [];
+            for (const btn of uniqueCandidates) {
+                const score = scoreButton(btn);
+                if (diagnostics.length < 8) {
+                    const label = labelFor(btn).slice(0, 40);
+                    const rect = btn.getBoundingClientRect();
+                    if (visible(btn)) diagnostics.push(`${score}:${label || describeIcon(btn).slice(0, 40)}@${Math.round(rect.left)},${Math.round(rect.top)}`);
+                }
+                if (score > bestScore) {
+                    best = btn;
+                    bestScore = score;
+                    bestLabel = labelFor(btn);
+                }
+            }
+
+            if (!best || bestScore < 0) return {
+                clicked: false,
+                reason: 'send-button-not-found',
+                diagnostics: diagnostics.join(' | ')
+            };
+            best.scrollIntoView({ block: 'center', inline: 'center' });
+            const rect = best.getBoundingClientRect();
+            best.focus();
+            return {
+                clicked: true,
+                score: bestScore,
+                label: bestLabel.slice(0, 80),
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2
+            };
+        }, sendSelector).catch((error) => ({ clicked: false, reason: error.message }));
+    }
+
+    async _waitForSendAccepted(options = {}) {
+        const timeoutMs = options.sendAcceptTimeoutMs || 5000;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < timeoutMs) {
+            const state = await this.page.evaluate(({ responseSelector, baseline, startTag }) => {
+                const editorSelector = [
+                    '.ProseMirror',
+                    '.ql-editor',
+                    'rich-textarea .ProseMirror',
+                    'rich-textarea .ql-editor',
+                    'rich-textarea div[contenteditable="true"]',
+                    'div[role="textbox"][contenteditable="true"]',
+                    'div[contenteditable="true"]',
+                    'textarea'
+                ].join(', ');
+                const visible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                };
+                const textOf = (el) => {
+                    if (!el) return '';
+                    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value || '';
+                    return el.innerText || el.textContent || '';
+                };
+                const editors = Array.from(document.querySelectorAll(editorSelector)).filter(visible);
+                editors.sort((a, b) => {
+                    const ar = a.getBoundingClientRect();
+                    const br = b.getBoundingClientRect();
+                    return (br.bottom - ar.bottom) || (br.left - ar.left);
+                });
+                const composerTexts = editors
+                    .map((editor) => textOf(editor).trim())
+                    .filter(Boolean);
+                const composerTextLength = composerTexts.reduce((max, text) => Math.max(max, text.length), 0);
+                const buttons = Array.from(document.querySelectorAll('button, [role="button"], [aria-label]')).filter(visible);
+                const hasStop = buttons.some((button) => {
+                    const label = [
+                        button.getAttribute('aria-label'),
+                        button.getAttribute('title'),
+                        button.innerText,
+                        button.textContent
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    return label.includes('stop') || label.includes('停止') || label.includes('中斷') || label.includes('停止生成');
+                });
+                const hasDisabledSend = buttons.some((button) => {
+                    const label = [
+                        button.getAttribute('aria-label'),
+                        button.getAttribute('title'),
+                        button.innerText,
+                        button.textContent
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    const looksLikeSend = label.includes('send message') ||
+                        label.includes('傳送訊息') ||
+                        label.includes('送出訊息') ||
+                        label.includes('發送訊息') ||
+                        label.includes('submit message') ||
+                        label.includes('send') ||
+                        label.includes('傳送') ||
+                        label.includes('送出');
+                    if (!looksLikeSend) return false;
+                    return button.disabled || button.getAttribute('aria-disabled') === 'true';
+                });
+
+                const isEditableNode = (el) => {
+                    if (!el) return false;
+                    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return true;
+                    if (el.isContentEditable) return true;
+                    if (el.getAttribute && el.getAttribute('contenteditable') === 'true') return true;
+                    return false;
+                };
+                const isResponseNode = (el) => {
+                    if (!el) return false;
+                    if (isEditableNode(el)) return false;
+                    return Boolean(
+                        el.closest('model-response') ||
+                        el.closest('.model-response-text') ||
+                        el.closest('.message-content') ||
+                        el.closest('[data-message-id]') ||
+                        el.closest('.conversation-turn')
+                    );
+                };
+
+                let responseChanged = false;
+                let responseFromNonEditable = false;
+                if (responseSelector) {
+                    try {
+                        const responses = Array.from(document.querySelectorAll(responseSelector));
+                        const semanticCandidates = responses.filter((node) => isResponseNode(node));
+                        const latest = (semanticCandidates.length ? semanticCandidates : responses).slice(-1)[0] || null;
+                        const latestText = textOf(latest);
+                        responseFromNonEditable = Boolean(latest && !isEditableNode(latest));
+                        responseChanged = Boolean(
+                            latestText &&
+                            latestText !== baseline &&
+                            responseFromNonEditable &&
+                            (!startTag || latestText.includes(startTag) || latestText.length > String(baseline || '').length + 20)
+                        );
+                    } catch (_) { }
+                }
+
+                const composerLikelyCleared = composerTextLength === 0;
+                const responseSignal = responseChanged && responseFromNonEditable;
+                const matchedSignals =
+                    (hasStop ? 1 : 0) +
+                    (hasDisabledSend ? 1 : 0) +
+                    (responseSignal ? 1 : 0) +
+                    (composerLikelyCleared ? 1 : 0);
+
+                return {
+                    composerTextLength,
+                    hasStop,
+                    hasDisabledSend,
+                    responseChanged,
+                    responseFromNonEditable,
+                    responseSignal,
+                    composerLikelyCleared,
+                    matchedSignals
+                };
+            }, {
+                responseSelector: options.responseSelector || '',
+                baseline: options.baseline || '',
+                startTag: options.startTag || ''
+            }).catch(() => ({
+                composerTextLength: 1,
+                hasStop: false,
+                hasDisabledSend: false,
+                responseChanged: false,
+                responseFromNonEditable: false,
+                responseSignal: false,
+                composerLikelyCleared: false,
+                matchedSignals: 0
+            }));
+
+            const safeState = state || {
+                composerTextLength: 1,
+                hasStop: false,
+                hasDisabledSend: false,
+                responseChanged: false,
+                responseFromNonEditable: false,
+                responseSignal: false,
+                composerLikelyCleared: false,
+                matchedSignals: 0
+            };
+            if (safeState.hasStop) {
+                return true;
+            }
+            if (safeState.hasDisabledSend && safeState.composerTextLength < 40) {
+                return true;
+            }
+            if (safeState.matchedSignals >= 2) {
+                return true;
+            }
+            await new Promise(r => setTimeout(r, 300));
+        }
+        return false;
+    }
+
+    _computeSendAcceptTimeout(payloadLength = 0, explicitTimeoutMs = null) {
+        if (Number.isFinite(Number(explicitTimeoutMs)) && Number(explicitTimeoutMs) > 0) {
+            return Number(explicitTimeoutMs);
+        }
+        const len = Number(payloadLength) || 0;
+        if (len >= 50000) return 12000;
+        if (len >= 25000) return 9000;
+        if (len >= 12000) return 7500;
+        if (len >= 5000) return 6500;
+        return 5000;
+    }
+
+    async clearComposerDraft() {
+        const editorSelector = PageInteractor.getComposerSelectors().join(', ');
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const focusedComposer = await this._focusBestComposer(editorSelector);
+                if (focusedComposer && focusedComposer.ok && Number.isFinite(focusedComposer.x) && Number.isFinite(focusedComposer.y) && this.page.mouse) {
+                    await this.page.mouse.click(focusedComposer.x, focusedComposer.y);
+                }
+                const isMac = process.platform === 'darwin';
+                await this.page.keyboard.press(isMac ? 'Meta+A' : 'Control+A').catch(() => {});
+                await new Promise(r => setTimeout(r, 70));
+                await this.page.keyboard.press('Backspace').catch(() => {});
+                await this.page.keyboard.press('Delete').catch(() => {});
+                await new Promise(r => setTimeout(r, 180));
+                const state = await this._inspectComposerDraftState('').catch(() => ({ hasDraft: true, length: 9999 }));
+                if (!state.hasDraft || state.length === 0) {
+                    console.log('🧹 [PageInteractor] 已清空 Gemini 草稿框。');
+                    return true;
+                }
+            } catch (_) { }
+        }
+        console.warn('⚠️ [PageInteractor] 草稿框清空失敗，可能需要使用者手動清除。');
+        return false;
     }
 
     /**
@@ -556,10 +1365,14 @@ class PageInteractor {
     /**
      * 🛡️ 頁面空閒檢查術：確保沒有正在生成的訊息或遮罩
      */
-    async _waitForReady(sendSelector) {
+    async _waitForReady(sendSelector, options = {}) {
         console.log("🔍 [PageInteractor] 正在檢查頁面空閒狀態...");
-        const maxWait = 15000; // 最多等 15 秒
+        const configuredWait = Number(options.readyTimeoutMs);
+        const maxWait = Number.isFinite(configuredWait) && configuredWait > 0
+            ? configuredWait
+            : 15000;
         const startTime = Date.now();
+        let lastBusyLogAt = 0;
 
         while (Date.now() - startTime < maxWait) {
             const isBusy = await this.page.evaluate(() => {
@@ -582,13 +1395,6 @@ class PageInteractor {
                     if (isAnyVisible) return true;
                 }
 
-                // 檢查是否正在進行流式輸出 (可能會有一個正在閃爍的游標或類別)
-                const streamingElements = document.querySelectorAll('.generating, .is-generating, [aria-busy="true"], .loading, .spinner');
-                for (const el of streamingElements) {
-                    const style = window.getComputedStyle(el);
-                    if (style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0) return true;
-                }
-
                 return false;
             });
 
@@ -597,9 +1403,14 @@ class PageInteractor {
                 return;
             }
 
+            if (Date.now() - lastBusyLogAt > 10000) {
+                const elapsed = Math.round((Date.now() - startTime) / 1000);
+                console.log(`⏳ [PageInteractor] Gemini 仍在生成/停止狀態，先不塞新草稿 (${elapsed}s/${Math.round(maxWait / 1000)}s)...`);
+                lastBusyLogAt = Date.now();
+            }
             await new Promise(r => setTimeout(r, 1000));
         }
-        console.warn("⚠️ [PageInteractor] 頁面忙碌檢查超時，將嘗試直接發送。");
+        console.warn("⚠️ [PageInteractor] Gemini 忙碌檢查超時；DOM 狀態可能殘留，改交由實際 composer/send button 狀態判斷。");
     }
 
     /**

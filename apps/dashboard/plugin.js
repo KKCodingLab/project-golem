@@ -79,18 +79,20 @@ class DashboardPlugin {
         // Web 廣播
         if (this.webServer) {
             this.webServer.broadcastLog({ time, msg: cleanMsg, type, raw, attachment });
-            this.webServer.broadcastState({
-                queueCount: this.manager.state.queueCount,
-                lastSchedule: this.manager.state.lastSchedule,
-                agentWorkersActive: this.manager.state.agentWorkersActive,
-                agentWorkerTimeouts: this.manager.state.agentWorkerTimeouts,
-                agentWorkerSendTimeouts: this.manager.state.agentWorkerSendTimeouts,
-                agentWorkerIdleTimeouts: this.manager.state.agentWorkerIdleTimeouts,
-                agentWorkerDraftPendingChecks: this.manager.state.agentWorkerDraftPendingChecks,
-                lastAgentWorkerEvent: this.manager.state.lastAgentWorkerEvent
-            });
+                this.webServer.broadcastState({
+                    queueCount: this.manager.state.queueCount,
+                    lastSchedule: this.manager.state.lastSchedule,
+                    agentWorkersActive: this.manager.state.agentWorkersActive,
+                    agentWorkerTimeouts: this.manager.state.agentWorkerTimeouts,
+                    agentWorkerSendTimeouts: this.manager.state.agentWorkerSendTimeouts,
+                    agentWorkerIdleTimeouts: this.manager.state.agentWorkerIdleTimeouts,
+                    agentWorkerDraftPendingChecks: this.manager.state.agentWorkerDraftPendingChecks,
+                    lastAgentWorkerEvent: this.manager.state.lastAgentWorkerEvent,
+                    actionGateRejections: this.manager.state.actionGateRejections,
+                    lastActionGateReject: this.manager.state.lastActionGateReject
+                });
+            }
         }
-    }
 
     _handleError(args) {
         if (this.manager.state.isDetached) return;

@@ -2,6 +2,21 @@
 // ⚡ ResponseParser (JSON 解析器 - 寬鬆版 + 集中化 + 終極矯正 + 穿透思考模式)
 // ============================================================
 class ResponseParser {
+    static _extractProtocolBlock(raw, tagName) {
+        if (!raw || !tagName) return "";
+        const text = String(raw);
+        const escaped = String(tagName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // 只接受「行首」協議標頭，避免正文提到 [GOLEM_REPLY]/[GOLEM_ACTION] 被誤判
+        const startRe = new RegExp(`(?:^|\\n)\\[${escaped}\\]\\s*`, 'i');
+        const start = startRe.exec(text);
+        if (!start) return "";
+        const from = start.index + start[0].length;
+        const rest = text.slice(from);
+        const endRe = /\n\[(?:\/?(?:GOLEM_(?:MEMORY|ACTION|REPLY)|AVOID_MEMORY))\]|\n\[\[?\s*END\s*:[^\]\n\r]+?\]?\]?/i;
+        const end = endRe.exec(rest);
+        return (end ? rest.slice(0, end.index) : rest).trim();
+    }
+
     static sanitizeProtocolTags(text) {
         if (!text) return "";
         return String(text)
@@ -17,34 +32,47 @@ class ResponseParser {
             .replace(/\[\[\s*END\s*:[^\]\n\r]+?\]/gi, '')
             .replace(/\[\s*BEGIN\s*:[^\]\n\r]+?\]\]/gi, '')
             .replace(/\[\s*END\s*:[^\]\n\r]+?\]\]/gi, '')
-            .replace(/\[\/?GOLEM_(?:MEMORY|ACTION|REPLY)\]/gi, '')
+            .replace(/(?:^|\n)\s*\[(?:\/?GOLEM_(?:MEMORY|ACTION|REPLY)|\/?AVOID_MEMORY)\]\s*(?=\n|$)/gi, '\n')
             .replace(/^\s*null\s*$/i, '')
             .trim();
     }
 
     static parse(raw) {
-        const parsed = { memory: null, actions: [], reply: "" };
-
+        const parsed = { memory: null, avoidMemory: null, actions: [], reply: "" };
         if (!raw) return parsed;
+        const rawText = typeof raw === 'string'
+            ? raw
+            : (raw && typeof raw.text === 'string' ? raw.text : String(raw));
+        if (!rawText) return parsed;
 
         // ✨ [升級：穿透 Thinking Mode] 
         // 許多時候 AI 的回覆會混雜 "Assessing My Capabilities" 等系統提示音。
         // 我們改用更具彈性的獨立擷取方式，無視前面的廢話。
 
         // 1. 獨立擷取 MEMORY
-        const memoryMatch = raw.match(/\[GOLEM_MEMORY\]([\s\S]*?)(?:\[GOLEM_ACTION\]|\[GOLEM_REPLY\]|$)/i);
-        if (memoryMatch && memoryMatch[1]) {
-            const content = ResponseParser.sanitizeProtocolTags(memoryMatch[1]);
+        const memoryBlock = ResponseParser._extractProtocolBlock(rawText, 'GOLEM_MEMORY');
+        if (memoryBlock) {
+            const content = ResponseParser.sanitizeProtocolTags(memoryBlock);
             if (content && content !== 'null' && content !== '(無)') {
                 parsed.memory = content;
             }
         }
 
+        const avoidBlock = ResponseParser._extractProtocolBlock(rawText, 'AVOID_MEMORY');
+        if (avoidBlock) {
+            const content = ResponseParser.sanitizeProtocolTags(avoidBlock);
+            if (content && content !== 'null' && content !== '(無)') {
+                parsed.avoidMemory = content;
+            }
+        }
+
         // 2. 獨立擷取 ACTION，並執行終極矯正
-        const actionMatch = raw.match(/\[GOLEM_ACTION\]([\s\S]*?)(?:\[GOLEM_REPLY\]|$)/i);
-        if (actionMatch && actionMatch[1]) {
+        const actionBlock = ResponseParser._extractProtocolBlock(rawText, 'GOLEM_ACTION');
+        if (actionBlock) {
             // 暴力脫去所有 Markdown 外衣
-            let jsonCandidate = actionMatch[1].replace(/```[a-zA-Z]*\s*/gi, '').replace(/```/g, '').trim();
+            let jsonCandidate = actionBlock.replace(/```[a-zA-Z]*\s*/gi, '').replace(/```/g, '').trim();
+            // 常見模型輸出: 在 JSON 前多打一行 "JSON"
+            jsonCandidate = jsonCandidate.replace(/^\s*json\s*\n/i, '').trim();
 
             if (jsonCandidate && jsonCandidate !== 'null') {
                 try {
@@ -79,8 +107,15 @@ class ResponseParser {
 
                     parsed.actions.push(...steps);
                 } catch (e) {
-                    // 如果 JSON 嚴重破裂，啟動絕地救援，嘗試用正則硬挖
-                    const fallbackMatch = jsonCandidate.match(/\[\s*\{[\s\S]*\}\s*\]/) || jsonCandidate.match(/\{[\s\S]*\}/);
+                    // 如果 JSON 嚴重破裂，啟動絕地救援，優先抓「含 action 的完整物件」，
+                    // 避免誤抓到內層陣列（例如 reminders: [{...}]）。
+                    let fallbackMatch = null;
+                    const objectCandidate = jsonCandidate.match(/\{[\s\S]*\}/);
+                    if (objectCandidate) {
+                        fallbackMatch = objectCandidate;
+                    } else {
+                        fallbackMatch = jsonCandidate.match(/\[\s*\{[\s\S]*\}\s*\]/);
+                    }
                     if (fallbackMatch) {
                         try {
                             const fixed = JSON.parse(fallbackMatch[0]);
@@ -134,15 +169,15 @@ class ResponseParser {
         }
 
         // 3. 獨立擷取 REPLY (✅ Fix: 遇到其他標籤或結尾時即停止，避免抓到 GOLEM_ACTION)
-        const replyMatch = raw.match(/\[GOLEM_REPLY\]([\s\S]*?)(?:\[\/?GOLEM_[A-Z]+\]|\[\[?\s*END\s*:[^\]\n\r]+?\]?\]?|$)/i);
-        if (replyMatch && replyMatch[1]) {
-            parsed.reply = ResponseParser.sanitizeProtocolTags(replyMatch[1]);
+        const replyBlock = ResponseParser._extractProtocolBlock(rawText, 'GOLEM_REPLY');
+        if (replyBlock) {
+            parsed.reply = ResponseParser.sanitizeProtocolTags(replyBlock);
         }
 
         // ✨ [防呆機制] 如果完全沒有抓到任何結構化標籤，就把整段文字 (過濾掉雜訊) 當作 Reply
-        if (!parsed.memory && parsed.actions.length === 0 && !parsed.reply) {
+        if (!parsed.memory && !parsed.avoidMemory && parsed.actions.length === 0 && !parsed.reply) {
             // 濾掉 Thinking Mode 常見的雜訊字眼
-            let cleanRaw = raw
+            let cleanRaw = rawText
                 .replace(/Assessing My Capabilities/gi, '')
                 .replace(/Answer now/gi, '')
                 .replace(/Gemini said/gi, '')

@@ -18,12 +18,14 @@ const registerSystemRoutes = require('./routes/api.system');
 const registerPersonaRoutes = require('./routes/api.persona');
 const registerGolemRoutes = require('./routes/api.golems');
 const registerMemoryRoutes = require('./routes/api.memory');
+const registerMemoryFirewallRoutes = require('./routes/api.memory-firewall');
 const registerMcpRoutes = require('./routes/api.mcp');
 const registerDiaryRoutes = require('./routes/api.diary');
 const registerPromptPoolRoutes = require('./routes/api.prompt-pool');
 const registerRpgRoutes = require('./routes/api.rpg');
 const registerStockRoutes = require('./routes/api.stocks');
 const registerReferenceFileRoutes = require('./routes/api.reference-files');
+const registerCalendarRoutes = require('./routes/api.calendar');
 
 class WebServer {
     constructor(dashboard) {
@@ -57,6 +59,16 @@ class WebServer {
         const uploadOverheadMb = Math.ceil((this.maxUploadBytes * 1.4) / (1024 * 1024));
         const bodyLimitMb = Math.min(50, Math.max(baseBodyLimitMb, uploadOverheadMb));
         const bodyLimit = `${bodyLimitMb}mb`;
+        const backupBodyLimitMbRaw = Number(process.env.DASHBOARD_BACKUP_BODY_LIMIT_MB || 120);
+        const backupBodyLimitMb = Number.isFinite(backupBodyLimitMbRaw) && backupBodyLimitMbRaw > 0
+            ? Math.min(backupBodyLimitMbRaw, 256)
+            : 120;
+        const backupBodyLimit = `${backupBodyLimitMb}mb`;
+
+        // Backup restore payload can be much larger than normal API requests.
+        // Apply a wider limit only for backup endpoints to reduce global attack surface.
+        this.app.use('/api/system/backup', express.json({ limit: backupBodyLimit }));
+        this.app.use('/api/system/backup', express.urlencoded({ limit: backupBodyLimit, extended: true }));
 
         this.app.use(express.json({ limit: bodyLimit }));
         this.app.use(express.urlencoded({ limit: bodyLimit, extended: true }));
@@ -197,16 +209,31 @@ class WebServer {
             registerPersonaRoutes,
             registerGolemRoutes,
             registerMemoryRoutes,
+            registerMemoryFirewallRoutes,
             registerMcpRoutes,
             registerDiaryRoutes,
             registerPromptPoolRoutes,
             registerRpgRoutes,
             registerStockRoutes,
             registerReferenceFileRoutes,
+            registerCalendarRoutes,
         ];
 
         routeFactories.forEach((factory) => {
             this.app.use(factory(this));
+        });
+
+        this.app.use((err, req, res, next) => {
+            if (!err) return next();
+            if (err.type === 'entity.too.large') {
+                return res.status(413).json({
+                    success: false,
+                    error: 'Payload too large',
+                    message: 'Backup file is too large for current server limit.',
+                    limit: err.limit || null
+                });
+            }
+            return next(err);
         });
 
         registerSocketHandlers(this);

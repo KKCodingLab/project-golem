@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast-provider";
 import { apiDeleteWrite, apiGet, apiPostWrite, apiWrite } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { Keyboard, Plus, Pencil, Trash2, Loader2, Save, X, Copy, Sparkles, RefreshCcw, TriangleAlert, Wand2, Activity, Terminal } from "lucide-react";
+import { Keyboard, Plus, Pencil, Trash2, Loader2, Save, X, Copy, Sparkles, RefreshCcw, TriangleAlert, Wand2, Activity, Terminal, Download, Upload } from "lucide-react";
 import { useI18n } from "@/components/I18nProvider";
 
 type PromptPoolItem = {
@@ -28,6 +28,11 @@ type PromptPoolResponse = {
     legacyConflicts?: PromptPoolLegacyConflict[];
     hasLegacyConflicts?: boolean;
     error?: string;
+    importedCount?: number;
+    created?: number;
+    updated?: number;
+    skippedCount?: number;
+    skipped?: { index: number; shortcut?: string; reason: string }[];
 };
 
 type PromptPoolLegacyConflict = {
@@ -134,6 +139,10 @@ export default function PromptPoolPage() {
     const [isRepairing, setIsRepairing] = useState(false);
     const [auditRecords, setAuditRecords] = useState<PromptPoolAuditRecord[]>([]);
     const [isAuditLoading, setIsAuditLoading] = useState(false);
+    const [importPayload, setImportPayload] = useState("");
+    const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
+    const [isImporting, setIsImporting] = useState(false);
+    const fileImportRef = useRef<HTMLInputElement | null>(null);
 
     const isEditing = Boolean(editingId);
 
@@ -471,6 +480,100 @@ export default function PromptPoolPage() {
         router.push(`/dashboard/prompt-trends?shortcut=${encodeURIComponent(safeShortcut)}`);
     };
 
+    const handleExport = useCallback(async () => {
+        try {
+            const data = await apiGet<{ success?: boolean; schemaVersion?: number; exportedAt?: string; itemCount?: number; items?: Array<{ shortcut: string; prompt: string; note?: string }> }>("/api/prompt-pool/export");
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `prompt-pool-${stamp}.json`;
+            anchor.click();
+            URL.revokeObjectURL(url);
+            toast.success(isEnglish ? "Export complete" : "匯出完成");
+        } catch (error) {
+            toast.error(
+                isEnglish ? "Export failed" : "匯出失敗",
+                getErrorMessage(error, isEnglish ? "Unable to export prompt pool" : "無法匯出 Prompt 指令池")
+            );
+        }
+    }, [isEnglish, toast]);
+
+    const handleImport = useCallback(async (rawInput?: string) => {
+        const raw = String(rawInput ?? importPayload ?? "").trim();
+        if (!raw) {
+            toast.warning(isEnglish ? "Import file is empty" : "匯入檔案是空的");
+            return;
+        }
+        try {
+            setIsImporting(true);
+            let parsed: unknown;
+            try {
+                parsed = JSON.parse(raw);
+            } catch {
+                throw new Error(isEnglish ? "Invalid JSON format" : "JSON 格式錯誤");
+            }
+
+            const data = await apiPostWrite<PromptPoolResponse>("/api/prompt-pool/import", {
+                mode: importMode,
+                payload: parsed,
+            });
+            setItems(Array.isArray(data.items) ? data.items : []);
+            const created = Number(data.created || 0);
+            const updated = Number(data.updated || 0);
+            const skipped = Number(data.skippedCount || 0);
+            toast.success(
+                isEnglish ? "Import complete" : "匯入完成",
+                isEnglish
+                    ? `Created ${created}, updated ${updated}, skipped ${skipped}`
+                    : `新增 ${created}、更新 ${updated}、略過 ${skipped}`
+            );
+            if (skipped > 0) {
+                const preview = (data.skipped || []).slice(0, 3)
+                    .map((item) => `#${item.index + 1} ${item.shortcut || "(empty)"} (${item.reason})`)
+                    .join(" ; ");
+                toast.warning(
+                    isEnglish ? "Some rows were skipped" : "部分資料已略過",
+                    preview
+                );
+            }
+            loadAuditRecords();
+        } catch (error) {
+            toast.error(
+                isEnglish ? "Import failed" : "匯入失敗",
+                getErrorMessage(error, isEnglish ? "Unable to import prompt pool" : "無法匯入 Prompt 指令池")
+            );
+        } finally {
+            setIsImporting(false);
+        }
+    }, [importMode, importPayload, isEnglish, loadAuditRecords, toast]);
+
+    const handlePickImportFile = useCallback(() => {
+        if (isImporting) return;
+        fileImportRef.current?.click();
+    }, [isImporting]);
+
+    const handleImportFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith(".json")) {
+            toast.warning(isEnglish ? "Please choose a .json file" : "請選擇 .json 檔案");
+            return;
+        }
+        try {
+            const text = await file.text();
+            setImportPayload(text);
+            await handleImport(text);
+        } catch {
+            toast.error(
+                isEnglish ? "Invalid JSON file" : "JSON 檔案格式錯誤",
+                isEnglish ? "Please check file content and try again." : "請確認檔案內容後重試。"
+            );
+        }
+    }, [handleImport, isEnglish, toast]);
+
     return (
         <div className="flex flex-col h-full bg-background p-6 gap-6 overflow-auto">
             <div className="flex items-start justify-between gap-4">
@@ -485,6 +588,32 @@ export default function PromptPoolPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <input
+                        ref={fileImportRef}
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={handleImportFileChange}
+                    />
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleExport}
+                        className="gap-2"
+                    >
+                        <Download className="w-4 h-4" />
+                        {isEnglish ? "Export" : "匯出"}
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handlePickImportFile}
+                        disabled={isImporting}
+                        className="gap-2"
+                    >
+                        {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                        {isImporting ? (isEnglish ? "Importing..." : "匯入中...") : (isEnglish ? "Import File" : "匯入檔案")}
+                    </Button>
                     <Button
                         type="button"
                         variant="secondary"
@@ -523,6 +652,40 @@ export default function PromptPoolPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
+                        <div className="mb-4 rounded-lg border border-border/70 bg-secondary/20 p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    {isEnglish ? "Import Mode" : "匯入模式"}
+                                </div>
+                                <div className="flex items-center gap-1 rounded-md border border-border p-1">
+                                    <button
+                                        type="button"
+                                        className={cn(
+                                            "px-2 py-1 text-[11px] rounded",
+                                            importMode === "merge" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                                        )}
+                                        onClick={() => setImportMode("merge")}
+                                    >
+                                        {isEnglish ? "Merge" : "合併"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={cn(
+                                            "px-2 py-1 text-[11px] rounded",
+                                            importMode === "replace" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                                        )}
+                                        onClick={() => setImportMode("replace")}
+                                    >
+                                        {isEnglish ? "Replace" : "覆蓋"}
+                                    </button>
+                                </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                {isEnglish
+                                    ? "Use the top toolbar Import File button to import a JSON backup."
+                                    : "請使用上方工具列的「匯入檔案」按鈕匯入 JSON 備份檔。"}
+                            </p>
+                        </div>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="space-y-2">
                                 <label className="text-xs uppercase tracking-wide text-muted-foreground">{isEnglish ? "Shortcut" : "快捷指令"}</label>

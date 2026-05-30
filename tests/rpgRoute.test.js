@@ -105,7 +105,40 @@ describe('RPG generateContent route helpers', () => {
         const prompt = _private.buildRpgPrompt('Return a character JSON object.');
 
         expect(prompt).toContain('Text RPG web app');
-        expect(prompt).toContain('Do NOT use Project Golem protocol tags');
+        expect(prompt).toContain('Put the RPG result only inside [GOLEM_REPLY]');
+        expect(prompt).toContain('Do NOT use [GOLEM_ACTION]');
         expect(prompt).toContain('Return a character JSON object.');
+    });
+
+    test('generateWithBrain prefers the normal ConversationManager queue used by dashboard chat', async () => {
+        const { _private } = require('../web-dashboard/routes/api.rpg');
+        const brain = {
+            sendMessage: jest.fn().mockResolvedValue({ text: 'OK_RPG_TEST' }),
+            _wikiChat: jest.fn().mockResolvedValue('WIKI_PATH'),
+        };
+        const instance = {
+            brain,
+            convoManager: {
+                enqueue: jest.fn(async (ctx) => {
+                    await ctx.reply('OK_RPG_TEST');
+                }),
+            },
+        };
+
+        const output = await _private.generateWithBrain(brain, 'RPG prompt', instance, 'golem_A');
+
+        expect(output).toBe('OK_RPG_TEST');
+        expect(instance.convoManager.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+            platform: 'web-rpg',
+            chatId: 'web-rpg-golem_A',
+        }), 'RPG prompt', expect.objectContaining({
+            disableToolRouting: true,
+            allowActions: false,
+            _rpgBypass: true,
+            isPriority: true,
+            bypassDebounce: true,
+        }));
+        expect(brain.sendMessage).not.toHaveBeenCalled();
+        expect(brain._wikiChat).not.toHaveBeenCalled();
     });
 });

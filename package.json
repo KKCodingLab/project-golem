@@ -1,6 +1,6 @@
 {
   "name": "project-golem",
-  "version": "9.5.5",
+  "version": "9.6.24",
   "description": "Project Golem v9.5 (Ultimate Chronos + MultiAgent Edition) - Collaborative AI System",
   "main": "index.js",
   "scripts": {
@@ -15,6 +15,11 @@
     "dashboard": "node --expose-gc apps/runtime/index.js dashboard",
     "dev": "nodemon --expose-gc apps/runtime/index.js dashboard",
     "doctor": "node scripts/doctor.js",
+    "doctor:runtime": "node scripts/runtime-check.js doctor",
+    "repair:runtime": "node scripts/runtime-check.js repair",
+    "smoke:runtime": "node scripts/runtime-check.js smoke",
+    "smoke:runtime:start": "node scripts/runtime-check.js smoke --with-start",
+    "runtime:all": "node scripts/runtime-check.js all",
     "// --- 跨平台安裝指令 ---": "",
     "win:setup": "setup.bat",
     "unix:setup": "chmod +x setup.sh && ./setup.sh",
@@ -41,6 +46,7 @@
     "apache-arrow": "^18.1.0",
     "blessed": "0.1.81",
     "blessed-contrib": "4.11.0",
+    "chrome-devtools-mcp": "^0.25.0",
     "cors": "^2.8.6",
     "discord.js": "^14.25.1",
     "dotenv": "16.4.5",

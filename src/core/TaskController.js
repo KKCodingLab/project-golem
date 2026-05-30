@@ -10,7 +10,8 @@ const NodeRouter = require('./NodeRouter');
 const GOLEM_SLASH_PREFIXES = [
     '/wiki', '/learn', '/skills', '/callme', '/help', '/menu',
     '/export', '/donate', '/support', '/update', '/reset',
-    '/model', '/reload', '/patch', '/project',
+    '/model', '/level', '/reload', '/patch', '/project', '/new', '/new_memory',
+    '/toolset', '/search', '/compress', '/profile', '/api', '/feedback',
 ];
 
 function shellQuote(value) {
@@ -75,41 +76,78 @@ class TaskController {
         }
     }
 
-    async runSequence(ctx, steps, startIndex = 0) {
+    async runSequence(ctx, steps, startIndex = 0, brain = null) {
         let reportBuffer = [];
         for (let i = startIndex; i < steps.length; i++) {
             const step = steps[i];
             const shouldAssembleSkill = step.action && step.action !== 'command';
-            let cmdToRun = step.cmd || step.parameter || step.command || (shouldAssembleSkill ? '' : step.parameters?.command) || "";
+            let cmdToRun =
+                step.cmd ||
+                step.parameter ||
+                step.command ||
+                (shouldAssembleSkill ? '' : (step.parameters?.command || step.parameters?.cmd || step.parameters?.parameter)) ||
+                "";
 
             // ✨ [v9.1 Hybrid Object Fix] 如果 cmd 為空但 action 存在，則自動組裝
             if (!cmdToRun && shouldAssembleSkill) {
                 const actionName = String(step.action).toLowerCase().replace(/_/g, '-');
                 const { action, ...params } = step;
-
-                const fs = require('fs');
-                const path = require('path');
-                const SkillPackageRegistry = require('../managers/SkillPackageRegistry');
-                const skillPackage = SkillPackageRegistry.listSkillPackages()
-                    .find(pkg => pkg.id === actionName || pkg.action === actionName);
-                const skillPath = skillPackage && fs.existsSync(skillPackage.indexPath)
-                    ? skillPackage.indexPath
-                    : path.join(process.cwd(), 'src/skills/core', `${actionName}.js`);
-
-                if (fs.existsSync(skillPath)) {
-                    let payloadObj = params;
-                    if (params.parameters && typeof params.parameters === 'object') {
-                        payloadObj = params.parameters; // 去除多層嵌套，方便腳本解析
-                    } else if (typeof params.parameters === 'string') {
-                        payloadObj = { command: params.parameters };
-                    }
-                    const payload = shellQuote(JSON.stringify(payloadObj));
-                    const relativeSkillPath = path.relative(process.cwd(), skillPath);
-                    cmdToRun = `node ${relativeSkillPath} ${payload}`;
-                    console.log(`🔧 [TaskController] 自動組裝技能指令: ${cmdToRun}`);
+                if (actionName === 'toolset') {
+                    const rawSub =
+                        params.scene ||
+                        params.mode ||
+                        params.target ||
+                        params.toolset ||
+                        params.command ||
+                        params.parameter ||
+                        (params.args && (params.args.scene || params.args.mode || params.args.target || params.args.toolset || params.args.command || params.args.parameter)) ||
+                        '';
+                    const sub = String(rawSub || '').trim();
+                    cmdToRun = sub ? `/toolset ${sub}` : '/toolset status';
+                    console.log(`🔧 [TaskController] toolset action bridge -> ${cmdToRun}`);
+                }
+                if (cmdToRun) {
+                    // 已橋接成 slash 指令，交給後續 slash 攔截流程
                 } else {
-                    console.warn(`⚠️ [TaskController] 找不到實體技能檔: ${skillPath}`);
-                    cmdToRun = `echo "⛔ [系統攔截] 找不到實體技能檔: ${skillPath} (可能為虛擬技能)。請改用 {\\\"action\\\": \\\"command\\\", \\\"command\\\": \\\"你的 shell 指令\\\"}。"`;
+
+                    const fs = require('fs');
+                    const path = require('path');
+                    const SkillPackageRegistry = require('../managers/SkillPackageRegistry');
+                    const skillPackage = SkillPackageRegistry.listSkillPackages()
+                        .find(pkg => pkg.id === actionName || pkg.action === actionName);
+                    const skillPath = skillPackage && fs.existsSync(skillPackage.indexPath)
+                        ? skillPackage.indexPath
+                        : path.join(process.cwd(), 'src/skills/core', `${actionName}.js`);
+
+                    if (fs.existsSync(skillPath)) {
+                        let payloadObj = params;
+                        if (params.parameters && typeof params.parameters === 'object') {
+                            payloadObj = params.parameters; // 去除多層嵌套，方便腳本解析
+                        } else if (typeof params.parameters === 'string') {
+                            payloadObj = { command: params.parameters };
+                        }
+                        const payload = shellQuote(JSON.stringify(payloadObj));
+                        const relativeSkillPath = path.relative(process.cwd(), skillPath);
+                        cmdToRun = `node ${relativeSkillPath} ${payload}`;
+                        console.log(`🔧 [TaskController] 自動組裝技能指令: ${cmdToRun}`);
+                    } else {
+                        console.warn(`⚠️ [TaskController] 找不到實體技能檔: ${skillPath}`);
+                        const sampleSkills = SkillPackageRegistry.listSkillPackages()
+                            .map(pkg => String(pkg && (pkg.action || pkg.id) || '').trim())
+                            .filter(Boolean)
+                            .slice(0, 3);
+                        const sampleSkill = sampleSkills[0] || 'wiki';
+                        const helpLines = [
+                            `⛔ [系統攔截] 找不到實體技能檔: ${skillPath}`,
+                            `你使用的 action: ${actionName}`,
+                            `請改用正確格式：`,
+                            `1) 技能：{"action":"${sampleSkill}","args":{"input":"..."}}`,
+                            `2) MCP：{"action":"mcp_call","server":"chrome-devtools","tool":"navigate_page","parameters":{"url":"https://example.com"}}`,
+                            `3) 指令：{"action":"command","parameter":"ls -la"}`,
+                            `提示：先輸入 /skills 查看可用技能。`
+                        ];
+                        cmdToRun = `echo ${shellQuote(helpLines.join('\n'))}`;
+                    }
                 }
             }
             // ── Golem 內建斜線指令攔截 ──────────────────────────────
@@ -120,7 +158,13 @@ class TaskController {
             if (isGolemSlash) {
                 console.log(`🔀 [TaskController] Golem 內建指令攔截: ${cmdToRun}`);
                 try {
-                    const result = await NodeRouter.handle({ text: cmdToRun, isAdmin: true }, ctx.brain);
+                    const activeBrain = brain || ctx.brain || null;
+                    const result = await NodeRouter.handle({
+                        text: cmdToRun,
+                        isAdmin: true,
+                        isFromGolemAction: true,
+                        source: 'golem_action',
+                    }, activeBrain);
                     const output = result || '（指令已執行，無輸出）';
                     reportBuffer.push(`[Step ${i + 1} Success] cmd: ${cmdToRun}\nResult:\n${output}`);
                 } catch (e) {
@@ -138,7 +182,7 @@ class TaskController {
             const evaluatedLevel = this.security.evaluateCommandLevel(cmdToRun);
             if (evaluatedLevel > SecurityManager.currentLevel) {
                 console.log(`⛔ [TaskController] 指令風險等級 (L${evaluatedLevel}) 大於當前安全設定 (L${SecurityManager.currentLevel}): ${cmdToRun}`);
-                return `⛔ 安全攔截：該指令風險等級為 L${evaluatedLevel}，但系統目前僅允許執行 L${SecurityManager.currentLevel} (含) 以下的指令。\n請管理員使用 \`/level ${evaluatedLevel}\` 暫時調高權限後重試。`;
+                return `⛔ 安全攔截：該指令風險等級為 L${evaluatedLevel}，但系統目前僅允許執行 L${SecurityManager.currentLevel} (含) 以下的指令。\n請管理員使用 \`/level\` 調整後重試。`;
             }
             if (risk.level === 'BLOCKED') {
                 console.log(`⛔ [TaskController] 指令被系統攔截: ${cmdToRun}`);

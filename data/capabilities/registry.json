@@ -1,0 +1,895 @@
+{
+  "version": 1,
+  "generatedAt": "2026-05-17T11:49:54.873Z",
+  "summary": {
+    "skills": 30,
+    "mcpTools": 29,
+    "total": 59,
+    "coveredExamples": 58
+  },
+  "capabilities": [
+    {
+      "id": "actor",
+      "lane": "skill",
+      "action": "actor",
+      "name": "Actor",
+      "description": "1. 當使用者要求 /callme 或「切換模式」時，請立即調整你的語氣。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/actor/skill.md",
+      "target": "actor",
+      "exampleCovered": true
+    },
+    {
+      "id": "adaptive-learning",
+      "lane": "skill",
+      "action": "adaptive-learning",
+      "name": "Adaptive Learning",
+      "description": "你有權限記錄並檢索你的學習歷程，以避免重複犯錯或應用已驗證的最佳實務。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/adaptive-learning/skill.md",
+      "target": "adaptive-learning",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools",
+      "lane": "skill",
+      "action": "chrome-devtools",
+      "name": "Chrome Devtools",
+      "description": "Chrome DevTools MCP browser automation, debugging, screenshots, DOM extraction, and DuckDuckGo HTML search fallback for Golem.",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/chrome-devtools/skill.md",
+      "target": "chrome-devtools",
+      "exampleCovered": true
+    },
+    {
+      "id": "chronos",
+      "lane": "skill",
+      "action": "chronos",
+      "name": "Chronos",
+      "description": "你擁有跨越時間的任務排程能力。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/chronos/skill.md",
+      "target": "chronos",
+      "exampleCovered": true
+    },
+    {
+      "id": "cloud",
+      "lane": "skill",
+      "action": "cloud",
+      "name": "Cloud",
+      "description": "你具備強大的 Google Search 原生聯網能力。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/cloud/skill.md",
+      "target": "cloud",
+      "exampleCovered": true
+    },
+    {
+      "id": "code-wizard",
+      "lane": "skill",
+      "action": "code-wizard",
+      "name": "Code Wizard",
+      "description": "當需要撰寫程式碼時，你具備直接「實體化」檔案的能力。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/code-wizard/skill.md",
+      "target": "code-wizard",
+      "exampleCovered": true
+    },
+    {
+      "id": "collab-calendar",
+      "lane": "skill",
+      "action": "collab-calendar",
+      "name": "協作日曆",
+      "description": "讀取、新增、更新、刪除使用者與 Golem 共用的行事曆事件。支援查詢今日/未來行程、關鍵字搜尋。",
+      "type": "productivity",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/collab-calendar/skill.md",
+      "target": "collab-calendar",
+      "exampleCovered": true
+    },
+    {
+      "id": "delegate-task",
+      "lane": "skill",
+      "action": "delegate-task",
+      "name": "Delegate Task",
+      "description": "當你面臨一個複雜、需要拆解的任務，或者某個子任務需要完全獨立的上下文與特定的工具集進行處理時，你可以使用此技能委派給一個「無狀態的子智能體」。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/delegate-task/skill.md",
+      "target": "delegate-task",
+      "exampleCovered": true
+    },
+    {
+      "id": "duckduckgo-devtools-bridge",
+      "lane": "skill",
+      "action": "duckduckgo-devtools-bridge",
+      "name": "DuckDuckGo + DevTools Bridge",
+      "description": "Chain public search from DuckDuckGo with follow-up deep page inspection via chrome-devtools MCP.",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/duckduckgo-devtools-bridge/skill.md",
+      "target": "duckduckgo-devtools-bridge",
+      "exampleCovered": true
+    },
+    {
+      "id": "duckduckgo-search",
+      "lane": "skill",
+      "action": "duckduckgo-search",
+      "name": "DuckDuckGo HTML Search",
+      "description": "Public web search through html.duckduckgo.com with browser-like headers, used when browser automation search is blocked.",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/duckduckgo-search/skill.md",
+      "target": "duckduckgo-search",
+      "exampleCovered": true
+    },
+    {
+      "id": "evolution",
+      "lane": "skill",
+      "action": "evolution",
+      "name": "Evolution",
+      "description": "你有權限讀取並修改自身的源碼，以優化效能或修復錯誤。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/evolution/skill.md",
+      "target": "evolution",
+      "exampleCovered": true
+    },
+    {
+      "id": "git",
+      "lane": "skill",
+      "action": "git",
+      "name": "Git",
+      "description": "你現在具備管理專案代碼與與 GitHub 互動的能力。",
+      "type": "optional",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/git/skill.md",
+      "target": "git",
+      "exampleCovered": true
+    },
+    {
+      "id": "image-prompt",
+      "lane": "skill",
+      "action": "image-prompt",
+      "name": "Image Prompt",
+      "description": "當使用者要求生圖提示詞時，你應該：",
+      "type": "optional",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/image-prompt/skill.md",
+      "target": "image-prompt",
+      "exampleCovered": true
+    },
+    {
+      "id": "log-archive",
+      "lane": "skill",
+      "action": "log-archive",
+      "name": "Log Archive",
+      "description": "你擁有對系統日誌進行深層壓縮與摘要的能力。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/log-archive/skill.md",
+      "target": "log-archive",
+      "exampleCovered": true
+    },
+    {
+      "id": "log-reader",
+      "lane": "skill",
+      "action": "log-reader",
+      "name": "Log Reader",
+      "description": "你擁有檢索並閱讀系統已生成的每日對話摘要的能力。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/log-reader/skill.md",
+      "target": "log-reader",
+      "exampleCovered": true
+    },
+    {
+      "id": "memory",
+      "lane": "skill",
+      "action": "memory",
+      "name": "Memory",
+      "description": "你擁有一個基於向量資料庫的「長期記憶海馬迴」。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/memory/skill.md",
+      "target": "memory",
+      "exampleCovered": true
+    },
+    {
+      "id": "moltbot",
+      "lane": "skill",
+      "action": "moltbot",
+      "name": "Moltbot",
+      "description": "你現在擁有連線至 Moltbook 這是一個只有 AI 可以發言、人類只能圍觀的網路。",
+      "type": "optional",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/moltbot/skill.md",
+      "target": "moltbot",
+      "exampleCovered": true
+    },
+    {
+      "id": "multi-agent",
+      "lane": "skill",
+      "action": "multi-agent",
+      "name": "Multi Agent",
+      "description": "你擁有召喚並主持「AI 專家團隊」的能力。當任務複雜、需要多角度分析、或使用者要求「開會討論」、「集思廣益」時使用。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/multi-agent/skill.md",
+      "target": "multi-agent",
+      "exampleCovered": true
+    },
+    {
+      "id": "notebooklm-studio",
+      "lane": "skill",
+      "action": "notebooklm-studio",
+      "name": "NotebookLM Studio",
+      "description": "Operate NotebookLM research workflow, source ingestion, artifact generation, and local handoff analysis.",
+      "type": "optional",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/notebooklm-studio/skill.md",
+      "target": "notebooklm-studio",
+      "exampleCovered": false
+    },
+    {
+      "id": "optic-nerve",
+      "lane": "skill",
+      "action": "optic-nerve",
+      "name": "Optic Nerve",
+      "description": "當你看到 【視覺訊號】 或 【Gemini 2.5 Flash 分析報告】 時：",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/optic-nerve/skill.md",
+      "target": "optic-nerve",
+      "exampleCovered": true
+    },
+    {
+      "id": "reference-files",
+      "lane": "skill",
+      "action": "reference-files",
+      "name": "Reference Files",
+      "description": "讀取、列出與整理使用者提供的參考檔案，讓回覆可以依據附件內容。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/reference-files/skill.md",
+      "target": "reference-files",
+      "exampleCovered": true
+    },
+    {
+      "id": "reflection",
+      "lane": "skill",
+      "action": "reflection",
+      "name": "Reflection",
+      "description": "你有權限分析過往的對話紀錄，評估自己的表現並產生改進計畫。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/reflection/skill.md",
+      "target": "reflection",
+      "exampleCovered": true
+    },
+    {
+      "id": "reincarnate",
+      "lane": "skill",
+      "action": "reincarnate",
+      "name": "Reincarnate",
+      "description": "觸發時機：當對話上下文過長導致你邏輯混亂，或使用者要求「重開對話」、「/new」、「變笨了」時。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/reincarnate/skill.md",
+      "target": "reincarnate",
+      "exampleCovered": true
+    },
+    {
+      "id": "session-search",
+      "lane": "skill",
+      "action": "session-search",
+      "name": "Session Search",
+      "description": "你可以主動搜尋並回溯你與使用者的歷史對話記錄，找回過去的決策、討論內容、已解決的問題和獲得的知識。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/session-search/skill.md",
+      "target": "session-search",
+      "exampleCovered": true
+    },
+    {
+      "id": "spotify",
+      "lane": "skill",
+      "action": "spotify",
+      "name": "Spotify",
+      "description": "你現在擁有控制 Spotify 的能力。當使用者想聽歌、切換音樂時，請調用此技能。",
+      "type": "optional",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/spotify/skill.md",
+      "target": "spotify",
+      "exampleCovered": true
+    },
+    {
+      "id": "stock-dashboard",
+      "lane": "skill",
+      "action": "stock-dashboard",
+      "name": "Stock Dashboard",
+      "description": "讀取並刷新 Dashboard 股市分析看板快照，協助分析台股、美股、自選股、技術指標與新聞脈絡。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/stock-dashboard/skill.md",
+      "target": "stock-dashboard",
+      "exampleCovered": true
+    },
+    {
+      "id": "sys-admin",
+      "lane": "skill",
+      "action": "sys-admin",
+      "name": "Sys Admin",
+      "description": "你擁有完整的 Shell 控制權。請根據 OS (Linux vs Windows) 選擇正確指令。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/sys-admin/skill.md",
+      "target": "sys-admin",
+      "exampleCovered": true
+    },
+    {
+      "id": "tool-explorer",
+      "lane": "skill",
+      "action": "tool-explorer",
+      "name": "Tool Explorer",
+      "description": "你身處未知的作業系統環境。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/tool-explorer/skill.md",
+      "target": "tool-explorer",
+      "exampleCovered": true
+    },
+    {
+      "id": "wiki",
+      "lane": "skill",
+      "action": "wiki",
+      "name": "Wiki",
+      "description": "維護 Golem 的 Markdown Wiki 知識庫，支援保存、搜尋、讀取與健康檢查。",
+      "type": "core",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/wiki/skill.md",
+      "target": "wiki",
+      "exampleCovered": true
+    },
+    {
+      "id": "youtube",
+      "lane": "skill",
+      "action": "youtube",
+      "name": "Youtube",
+      "description": "YouTube HTML parser via ytInitialPlayerResponse extraction",
+      "type": "optional",
+      "promptPath": "/Users/arvin/Desktop/project-golem-plus/src/skills/modules/youtube/skill.md",
+      "target": "youtube",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/click",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "click",
+      "name": "click",
+      "description": "Clicks on the provided element",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "click",
+        "parameters": {
+          "uid": "<uid>"
+        }
+      },
+      "target": "chrome-devtools/click",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/close_page",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "close_page",
+      "name": "close_page",
+      "description": "Closes the page by its index. The last open page cannot be closed.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "close_page",
+        "parameters": {
+          "pageId": 1
+        }
+      },
+      "target": "chrome-devtools/close_page",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/drag",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "drag",
+      "name": "drag",
+      "description": "Drag an element onto another element",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "drag",
+        "parameters": {
+          "from_uid": "<from_uid>",
+          "to_uid": "<to_uid>"
+        }
+      },
+      "target": "chrome-devtools/drag",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/emulate",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "emulate",
+      "name": "emulate",
+      "description": "Emulates various features on the selected page.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "emulate",
+        "parameters": {
+          "networkConditions": "Offline",
+          "cpuThrottlingRate": 1,
+          "geolocation": "<geolocation>"
+        }
+      },
+      "target": "chrome-devtools/emulate",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/evaluate_script",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "evaluate_script",
+      "name": "evaluate_script",
+      "description": "Evaluate a JavaScript function inside the currently selected page. Returns the response as JSON,\nso returned values have to be JSON-serializable.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "evaluate_script",
+        "parameters": {
+          "function": "<function>"
+        }
+      },
+      "target": "chrome-devtools/evaluate_script",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/fill",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "fill",
+      "name": "fill",
+      "description": "Type text into an input, text area or select an option from a <select> element.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "fill",
+        "parameters": {
+          "uid": "<uid>",
+          "value": "<value>"
+        }
+      },
+      "target": "chrome-devtools/fill",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/fill_form",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "fill_form",
+      "name": "fill_form",
+      "description": "Fill out multiple form elements at once",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "fill_form",
+        "parameters": {
+          "elements": [
+            {
+              "uid": "<uid>",
+              "value": "<value>"
+            }
+          ]
+        }
+      },
+      "target": "chrome-devtools/fill_form",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/get_console_message",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "get_console_message",
+      "name": "get_console_message",
+      "description": "Gets a console message by its ID. You can get all messages by calling list_console_messages.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "get_console_message",
+        "parameters": {
+          "msgid": 1
+        }
+      },
+      "target": "chrome-devtools/get_console_message",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/get_network_request",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "get_network_request",
+      "name": "get_network_request",
+      "description": "Gets a network request by an optional reqid, if omitted returns the currently selected request in the DevTools Network panel.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "get_network_request",
+        "parameters": {
+          "reqid": 1,
+          "requestFilePath": "path/to/file",
+          "responseFilePath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/get_network_request",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/handle_dialog",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "handle_dialog",
+      "name": "handle_dialog",
+      "description": "If a browser dialog was opened, use this command to handle it",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "handle_dialog",
+        "parameters": {
+          "action": "accept"
+        }
+      },
+      "target": "chrome-devtools/handle_dialog",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/hover",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "hover",
+      "name": "hover",
+      "description": "Hover over the provided element",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "hover",
+        "parameters": {
+          "uid": "<uid>"
+        }
+      },
+      "target": "chrome-devtools/hover",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/lighthouse_audit",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "lighthouse_audit",
+      "name": "lighthouse_audit",
+      "description": "Get Lighthouse score and reports for accessibility, SEO, best practices, and agentic browsing. This excludes performance. For performance audits, run performance_start_trace",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "lighthouse_audit",
+        "parameters": {
+          "mode": "navigation",
+          "device": "desktop",
+          "outputDirPath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/lighthouse_audit",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/list_console_messages",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "list_console_messages",
+      "name": "list_console_messages",
+      "description": "List all console messages for the currently selected page since the last navigation.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "list_console_messages",
+        "parameters": {
+          "pageSize": 1,
+          "pageIdx": 1,
+          "types": [
+            "log"
+          ]
+        }
+      },
+      "target": "chrome-devtools/list_console_messages",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/list_network_requests",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "list_network_requests",
+      "name": "list_network_requests",
+      "description": "List all requests for the currently selected page since the last navigation.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "list_network_requests",
+        "parameters": {
+          "pageSize": 1,
+          "pageIdx": 1,
+          "resourceTypes": [
+            "document"
+          ]
+        }
+      },
+      "target": "chrome-devtools/list_network_requests",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/list_pages",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "list_pages",
+      "name": "list_pages",
+      "description": "Get a list of pages open in the browser.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "list_pages",
+        "parameters": {}
+      },
+      "target": "chrome-devtools/list_pages",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/navigate_page",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "navigate_page",
+      "name": "navigate_page",
+      "description": "Go to a URL, or back, forward, or reload. Use project URL if not specified otherwise.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "navigate_page",
+        "parameters": {
+          "type": "url",
+          "url": "https://example.com",
+          "ignoreCache": false
+        }
+      },
+      "target": "chrome-devtools/navigate_page",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/new_page",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "new_page",
+      "name": "new_page",
+      "description": "Open a new tab and load a URL. Use project URL if not specified otherwise.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "new_page",
+        "parameters": {
+          "url": "https://example.com"
+        }
+      },
+      "target": "chrome-devtools/new_page",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/performance_analyze_insight",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "performance_analyze_insight",
+      "name": "performance_analyze_insight",
+      "description": "Provides more detailed information on a specific Performance Insight of an insight set that was highlighted in the results of a trace recording.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "performance_analyze_insight",
+        "parameters": {
+          "insightSetId": "<insightSetId>",
+          "insightName": "<insightName>"
+        }
+      },
+      "target": "chrome-devtools/performance_analyze_insight",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/performance_start_trace",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "performance_start_trace",
+      "name": "performance_start_trace",
+      "description": "Start a performance trace on the selected webpage. Use to find frontend performance issues, Core Web Vitals (LCP, INP, CLS), and improve page load speed.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "performance_start_trace",
+        "parameters": {
+          "reload": true,
+          "autoStop": true,
+          "filePath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/performance_start_trace",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/performance_stop_trace",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "performance_stop_trace",
+      "name": "performance_stop_trace",
+      "description": "Stop the active performance trace recording on the selected webpage.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "performance_stop_trace",
+        "parameters": {
+          "filePath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/performance_stop_trace",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/press_key",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "press_key",
+      "name": "press_key",
+      "description": "Press a key or key combination. Use this when other input methods like fill() cannot be used (e.g., keyboard shortcuts, navigation keys, or special key combinations).",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "press_key",
+        "parameters": {
+          "key": "<key>"
+        }
+      },
+      "target": "chrome-devtools/press_key",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/resize_page",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "resize_page",
+      "name": "resize_page",
+      "description": "Resizes the selected page's window so that the page has specified dimension",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "resize_page",
+        "parameters": {
+          "width": 1,
+          "height": 1
+        }
+      },
+      "target": "chrome-devtools/resize_page",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/select_page",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "select_page",
+      "name": "select_page",
+      "description": "Select a page as a context for future tool calls.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "select_page",
+        "parameters": {
+          "pageId": 1
+        }
+      },
+      "target": "chrome-devtools/select_page",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/take_memory_snapshot",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "take_memory_snapshot",
+      "name": "take_memory_snapshot",
+      "description": "Capture a heap snapshot of the currently selected page. Use to analyze the memory distribution of JavaScript objects and debug memory leaks.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "take_memory_snapshot",
+        "parameters": {
+          "filePath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/take_memory_snapshot",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/take_screenshot",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "take_screenshot",
+      "name": "take_screenshot",
+      "description": "Take a screenshot of the page or element.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "take_screenshot",
+        "parameters": {
+          "format": "png",
+          "quality": 1,
+          "uid": "<uid>"
+        }
+      },
+      "target": "chrome-devtools/take_screenshot",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/take_snapshot",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "take_snapshot",
+      "name": "take_snapshot",
+      "description": "Take a text snapshot of the currently selected page based on the a11y tree. The snapshot lists page elements along with a unique\nidentifier (uid). Always use the latest snapshot. Prefer taking a snapshot over taking a screenshot. The snapshot indicates the element selected\nin the DevTools Elements panel (if any).",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "take_snapshot",
+        "parameters": {
+          "verbose": false,
+          "filePath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/take_snapshot",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/type_text",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "type_text",
+      "name": "type_text",
+      "description": "Type text using keyboard into a previously focused input",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "type_text",
+        "parameters": {
+          "text": "Text content"
+        }
+      },
+      "target": "chrome-devtools/type_text",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/upload_file",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "upload_file",
+      "name": "upload_file",
+      "description": "Upload a file through a provided element.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "upload_file",
+        "parameters": {
+          "uid": "<uid>",
+          "filePath": "path/to/file"
+        }
+      },
+      "target": "chrome-devtools/upload_file",
+      "exampleCovered": true
+    },
+    {
+      "id": "chrome-devtools/wait_for",
+      "lane": "mcp",
+      "server": "chrome-devtools",
+      "tool": "wait_for",
+      "name": "wait_for",
+      "description": "Wait for the specified text to appear on the selected page.",
+      "example": {
+        "action": "mcp_call",
+        "server": "chrome-devtools",
+        "tool": "wait_for",
+        "parameters": {
+          "text": [
+            "Text content"
+          ]
+        }
+      },
+      "target": "chrome-devtools/wait_for",
+      "exampleCovered": true
+    }
+  ]
+}

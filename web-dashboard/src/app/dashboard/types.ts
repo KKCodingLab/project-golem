@@ -8,6 +8,8 @@ export type DashboardMetrics = {
     agentWorkerIdleTimeouts: number;
     agentWorkerDraftPendingChecks: number;
     lastAgentWorkerEvent: string;
+    actionGateRejections: number;
+    lastActionGateReject: string;
     memUsage: number;
 };
 

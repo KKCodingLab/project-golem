@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "id": "example:command:minimal",
+      "lane": "command",
+      "target": "command",
+      "intent_tags": ["local", "shell"],
+      "error_tags": ["invalid_command_shape"],
+      "example": "{\"action\":\"command\",\"parameter\":\"ls -la\"}",
+      "anti_pattern": "不要使用 cmd/command 欄位混用；command lane 固定用 parameter。"
+    },
+    {
+      "id": "example:command:install:skill",
+      "lane": "command",
+      "target": "install-skill",
+      "intent_tags": ["install", "skill", "package"],
+      "error_tags": ["invalid_command_shape", "unknown_install_subcommand"],
+      "example": "{\"action\":\"command\",\"parameter\":\"/install skill /absolute/path/to/skill-package\"}",
+      "anti_pattern": "安裝技能請走 /install skill <path>；不要把技能安裝寫成 mcp_call 或自創 action。"
+    },
+    {
+      "id": "example:command:install:mcp-file",
+      "lane": "command",
+      "target": "install-mcp-file",
+      "intent_tags": ["install", "mcp", "config"],
+      "error_tags": ["invalid_command_shape", "invalid_mcp_config"],
+      "example": "{\"action\":\"command\",\"parameter\":\"/install mcp-file /absolute/path/to/mcp-server.json\"}",
+      "anti_pattern": "安裝 MCP 建議先用 mcp-file；JSON 需包含 name、command，args/env/timeout/enabled 為選填。"
+    },
+    {
+      "id": "example:command:install:mcp-json",
+      "lane": "command",
+      "target": "install-mcp-json",
+      "intent_tags": ["install", "mcp", "json"],
+      "error_tags": ["invalid_command_shape", "invalid_json"],
+      "example": "{\"action\":\"command\",\"parameter\":\"/install mcp-json {\\\"name\\\":\\\"duckduckgo\\\",\\\"command\\\":\\\"npx\\\",\\\"args\\\":[\\\"-y\\\",\\\"duckduckgo-mcp\\\"],\\\"enabled\\\":true}\"}",
+      "anti_pattern": "mcp-json 必須是單行合法 JSON；不要混用 parameters/args 到 command lane。"
+    },
+    {
+      "id": "example:command:install:skill-gh",
+      "lane": "command",
+      "target": "install-skill-gh",
+      "intent_tags": ["install", "skill", "github"],
+      "error_tags": ["invalid_url", "download_failed"],
+      "example": "{\"action\":\"command\",\"parameter\":\"/install skill-gh https://github.com/openclaw/skills/tree/main/skills/demo\"}",
+      "anti_pattern": "遠端技能僅支援 github.com；安裝風險由使用者自行承擔。"
+    },
+    {
+      "id": "example:command:install:mcp-url",
+      "lane": "command",
+      "target": "install-mcp-url",
+      "intent_tags": ["install", "mcp", "url"],
+      "error_tags": ["invalid_url", "invalid_json", "download_failed"],
+      "example": "{\"action\":\"command\",\"parameter\":\"/install mcp-url https://raw.githubusercontent.com/openclaw/mcp-catalog/main/duckduckgo.json\"}",
+      "anti_pattern": "mcp-url 僅允許 https，且內容必須是單一 MCP JSON 物件。"
+    },
+    {
+      "id": "example:skill:collab-calendar:crud",
+      "lane": "skill",
+      "target": "collab-calendar",
+      "intent_tags": ["calendar", "schedule", "event"],
+      "error_tags": ["missing_id", "missing_action", "invalid_field"],
+      "example": "{\"action\":\"collab-calendar\",\"args\":{\"action\":\"add\",\"title\":\"倒垃圾（8點前）\",\"start\":\"2026-05-17T07:30:00+08:00\",\"end\":\"2026-05-17T08:00:00+08:00\",\"description\":\"明早八點前完成\",\"reminderMinutes\":10}}\n{\"action\":\"collab-calendar\",\"args\":{\"action\":\"list\"}}\n{\"action\":\"collab-calendar\",\"args\":{\"action\":\"update\",\"id\":\"evt_xxx\",\"title\":\"【已取消】倒垃圾\",\"description\":\"垃圾車休假，取消提醒\"}}\n{\"action\":\"collab-calendar\",\"args\":{\"action\":\"delete\",\"id\":\"evt_xxx\"}}",
+      "anti_pattern": "delete/update 必須提供 id；不要用 timeMin/timeMax/q 取代 id。"
+    },
+    {
+      "id": "example:mcp:template",
+      "lane": "mcp",
+      "target": "mcp_call",
+      "intent_tags": ["external", "connector"],
+      "error_tags": ["invalid_mcp_call"],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"navigate_page\",\"parameters\":{\"url\":\"https://example.com\",\"timeout\":60000}}",
+      "anti_pattern": "mcp_call 必須同時有 server、tool、parameters。"
+    },
+    {
+      "id": "example:mcp:chrome-devtools:browse",
+      "lane": "mcp",
+      "target": "chrome-devtools/navigate_page",
+      "intent_tags": ["browser", "search", "read"],
+      "error_tags": ["unknown_tool", "invalid_param"],
+      "example": "{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"navigate_page\",\"parameters\":{\"url\":\"https://html.duckduckgo.com/html/?q=AI&kl=tw-tzh\",\"timeout\":60000}}\n{\"action\":\"mcp_call\",\"server\":\"chrome-devtools\",\"tool\":\"take_snapshot\",\"parameters\":{}}",
+      "anti_pattern": "不要用不存在的 tool 名稱；先 navigate_page 再 take_snapshot。"
+    }
+  ]
+}

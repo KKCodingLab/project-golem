@@ -3,17 +3,26 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
-import { Copy, Plus, RefreshCw, Trash2, Search, Filter, Database, Download, Upload, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, Plus, RefreshCw, Trash2, Search, Filter, Database, Download, Upload, ChevronDown, ChevronUp, EyeOff, Eye, Pencil } from "lucide-react";
 import { useGolem } from "@/components/GolemContext";
 import { cn } from "@/lib/utils";
-import { apiDeleteWrite, apiGet, apiPost } from "@/lib/api-client";
+import { apiDeleteWrite, apiGet, apiPost, apiWrite } from "@/lib/api-client";
 import { useI18n } from "@/components/I18nProvider";
 
 interface MemoryItem {
+    id?: string;
     text: string;
     metadata?: Record<string, unknown>;
+    visible?: boolean;
+    createdAt?: string;
+    updatedAt?: string;
     score?: number;
 }
+
+type EditState = {
+    id: string;
+    originalText: string;
+};
 
 function getErrorMessage(error: unknown, locale: "zh-TW" | "en"): string {
     if (error instanceof Error && error.message) return error.message;
@@ -67,15 +76,24 @@ export function MemoryTable() {
     const [isImporting, setIsImporting] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [filterType, setFilterType] = useState<string>("all");
+    const [showHidden, setShowHidden] = useState<boolean>(false);
+    const [editState, setEditState] = useState<EditState | null>(null);
+    const [editDraft, setEditDraft] = useState("");
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const fetchMemories = useCallback(async () => {
         if (!activeGolem) return;
         setLoading(true);
         try {
+            const params = new URLSearchParams({
+                golemId: activeGolem,
+                includeHidden: showHidden ? "true" : "false",
+                limit: "1000"
+            });
             const data = await apiGet<MemoryItem[] | { avoidList?: string[] }>(
-                `/api/memory?golemId=${encodeURIComponent(activeGolem)}`,
-                undefined,
+                `/api/memory?${params.toString()}`,
+                { cache: "no-store" },
                 { profile: "none" }
             );
             const list = Array.isArray(data)
@@ -89,7 +107,7 @@ export function MemoryTable() {
         } finally {
             setLoading(false);
         }
-    }, [activeGolem]);
+    }, [activeGolem, showHidden]);
 
     const addMemory = async () => {
         if (!newMemory.trim() || !activeGolem) return;
@@ -197,6 +215,75 @@ export function MemoryTable() {
         });
     }, [memories, searchQuery, filterType]);
 
+    const patchMemory = async (memory: MemoryItem, patch: Record<string, unknown>) => {
+        if (!activeGolem || !memory.id) {
+            toast.error(isEnglish ? "Action unavailable" : "操作不可用", isEnglish ? "This memory item has no stable ID yet. Please refresh and retry." : "此記憶尚未有可操作 ID，請重新整理後重試。");
+            return;
+        }
+        try {
+            await apiWrite(`/api/memory/${encodeURIComponent(memory.id)}?golemId=${encodeURIComponent(activeGolem)}`, {
+                method: "PATCH",
+                body: patch,
+                retry: { profile: "write" }
+            });
+            await fetchMemories();
+        } catch (e: unknown) {
+            toast.error(isEnglish ? "Update failed" : "更新失敗", getErrorMessage(e, locale));
+        }
+    };
+
+    const deleteMemory = async (memory: MemoryItem) => {
+        if (!activeGolem || !memory.id) {
+            toast.error(isEnglish ? "Action unavailable" : "操作不可用", isEnglish ? "This memory item has no stable ID yet. Please refresh and retry." : "此記憶尚未有可操作 ID，請重新整理後重試。");
+            return;
+        }
+        const ok = confirm(isEnglish ? "Delete this memory?" : "確定刪除此記憶？");
+        if (!ok) return;
+        try {
+            await apiDeleteWrite(`/api/memory/${encodeURIComponent(memory.id)}?golemId=${encodeURIComponent(activeGolem)}`);
+            await fetchMemories();
+        } catch (e: unknown) {
+            toast.error(isEnglish ? "Delete failed" : "刪除失敗", getErrorMessage(e, locale));
+        }
+    };
+
+    const openEditModal = (memory: MemoryItem) => {
+        if (!memory.id) return;
+        setEditState({ id: memory.id, originalText: memory.text });
+        setEditDraft(memory.text);
+    };
+
+    const closeEditModal = () => {
+        if (isSavingEdit) return;
+        setEditState(null);
+        setEditDraft("");
+    };
+
+    const saveEditMemory = async () => {
+        if (!editState) return;
+        const next = editDraft;
+        if (!next.trim()) {
+            toast.error(isEnglish ? "Edit failed" : "編輯失敗", isEnglish ? "Content cannot be empty." : "內容不可為空。");
+            return;
+        }
+        if (next === editState.originalText) {
+            closeEditModal();
+            return;
+        }
+        const target = memories.find((m) => m.id === editState.id);
+        if (!target) {
+            toast.error(isEnglish ? "Edit failed" : "編輯失敗", isEnglish ? "Memory not found. Please refresh and retry." : "找不到記憶資料，請重新整理後重試。");
+            return;
+        }
+        setIsSavingEdit(true);
+        try {
+            await patchMemory(target, { text: next });
+            closeEditModal();
+        } finally {
+            setIsSavingEdit(false);
+        }
+    };
+
     if (!activeGolem) {
         return (
             <div className="text-muted-foreground italic p-4 text-sm animate-pulse">
@@ -269,6 +356,16 @@ export function MemoryTable() {
                     >
                         <RefreshCw className={cn("w-4 h-4", loading && "animate-spin text-primary")} />
                     </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => setShowHidden((prev) => !prev)}
+                        className={cn(
+                            "h-10 px-3",
+                            showHidden ? "bg-amber-500/10 border-amber-500/30 text-amber-300" : "bg-card border-border text-muted-foreground"
+                        )}
+                    >
+                        {showHidden ? (isEnglish ? "Showing Hidden" : "顯示封鎖中") : (isEnglish ? "Hide Blocked" : "隱藏封鎖")}
+                    </Button>
                 </div>
             </div>
 
@@ -281,13 +378,14 @@ export function MemoryTable() {
                                 <th scope="col" className="px-5 py-3 tracking-wider w-16 text-center">{isEnglish ? "No." : "序號"}</th>
                                 <th scope="col" className="px-4 py-3 tracking-wider w-32 text-center">{isEnglish ? "Type" : "類型 (Type)"}</th>
                                 <th scope="col" className="px-4 py-3 tracking-wider">{isEnglish ? "Neural Content" : "數據核心內容 (Neural Content)"}</th>
-                                <th scope="col" className="px-4 py-3 tracking-wider w-16 text-center">{isEnglish ? "Action" : "動作"}</th>
+                                <th scope="col" className="px-4 py-3 tracking-wider w-20 text-center">{isEnglish ? "Visible" : "可見"}</th>
+                                <th scope="col" className="px-4 py-3 tracking-wider w-24 text-center">{isEnglish ? "Action" : "動作"}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border/50">
                             {filteredMemories.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-20 text-center text-muted-foreground/50">
+                                    <td colSpan={5} className="px-6 py-20 text-center text-muted-foreground/50">
                                         <Database className="w-10 h-10 mx-auto mb-3 opacity-20" />
                                         <p className="text-sm">{isEnglish ? "No memory records found" : "未發現任何記憶紀錄"}</p>
                                     </td>
@@ -297,8 +395,9 @@ export function MemoryTable() {
                                 [...filteredMemories].reverse().map((mem, index) => {
                                     const displayIndex = filteredMemories.length - index;
                                     const memoryType = getMemoryType(mem.metadata);
+                                    const isVisible = mem.visible !== false && mem.metadata?.visible !== false;
                                     return (
-                                        <tr key={index} className="hover:bg-accent/40 transition-colors group">
+                                        <tr key={mem.id || index} className={cn("hover:bg-accent/40 transition-colors group", !isVisible && "opacity-60")}>
                                             <td className="px-5 py-4 text-xs text-muted-foreground/40 font-mono text-center">
                                                 #{displayIndex}
                                             </td>
@@ -319,12 +418,45 @@ export function MemoryTable() {
                                             </td>
                                             <td className="px-4 py-4 text-center">
                                                 <button
-                                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all opacity-0 group-hover:opacity-100"
-                                                    title={isEnglish ? "Copy to clipboard" : "複製到剪貼簿"}
-                                                    onClick={() => navigator.clipboard.writeText(mem.text)}
+                                                    className={cn(
+                                                        "w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors",
+                                                        isVisible
+                                                            ? "text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/10"
+                                                            : "text-amber-300 border-amber-500/30 hover:bg-amber-500/10"
+                                                    )}
+                                                    title={isVisible ? (isEnglish ? "Block this memory" : "封鎖此記憶") : (isEnglish ? "Unblock this memory" : "解除封鎖")}
+                                                    onClick={() => patchMemory(mem, { visible: !isVisible })}
+                                                    disabled={!mem.id}
                                                 >
-                                                    <Copy className="w-4 h-4" />
+                                                    {isVisible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                                                 </button>
+                                            </td>
+                                            <td className="px-4 py-4 text-center">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <button
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                                                        title={isEnglish ? "Copy to clipboard" : "複製到剪貼簿"}
+                                                        onClick={() => navigator.clipboard.writeText(mem.text)}
+                                                    >
+                                                        <Copy className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-cyan-300 hover:bg-cyan-500/10 transition-all"
+                                                        title={isEnglish ? "Edit memory" : "編輯記憶"}
+                                                        onClick={() => openEditModal(mem)}
+                                                        disabled={!mem.id}
+                                                    >
+                                                        <Pencil className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-red-300 hover:bg-red-500/10 transition-all"
+                                                        title={isEnglish ? "Delete memory" : "刪除記憶"}
+                                                        onClick={() => deleteMemory(mem)}
+                                                        disabled={!mem.id}
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -386,6 +518,56 @@ export function MemoryTable() {
                     </Button>
                 </div>
             </div>
+
+            {editState && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+                    <div className="w-full max-w-3xl rounded-xl border border-border bg-card shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                            <h3 className="text-base font-semibold text-foreground">
+                                {isEnglish ? "Edit memory content" : "編輯記憶內容"}
+                            </h3>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={closeEditModal}
+                                disabled={isSavingEdit}
+                                className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                            >
+                                {isEnglish ? "Close" : "關閉"}
+                            </Button>
+                        </div>
+                        <div className="space-y-3 px-5 py-4">
+                            <textarea
+                                value={editDraft}
+                                onChange={(e) => setEditDraft(e.target.value)}
+                                className="min-h-[280px] w-full resize-y rounded-lg border border-border bg-secondary/20 px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                                placeholder={isEnglish ? "Edit memory text..." : "請輸入要更新的記憶內容..."}
+                                disabled={isSavingEdit}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                {isEnglish ? "Tip: drag the bottom-right corner to enlarge this editor." : "提示：可拖曳右下角調整編輯區大小。"}
+                            </p>
+                        </div>
+                        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+                            <Button
+                                variant="outline"
+                                onClick={closeEditModal}
+                                disabled={isSavingEdit}
+                            >
+                                {isEnglish ? "Cancel" : "取消"}
+                            </Button>
+                            <Button
+                                onClick={saveEditMemory}
+                                disabled={isSavingEdit}
+                            >
+                                {isSavingEdit
+                                    ? (isEnglish ? "Saving..." : "儲存中...")
+                                    : (isEnglish ? "Save changes" : "儲存變更")}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

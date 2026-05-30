@@ -156,6 +156,75 @@ module.exports = function registerGolemRoutes(server) {
         return summary;
     }
 
+    function mergeMemoryDirectoryBestEffort(sourceRoot, targetRoot) {
+        const summary = { files: 0, directories: 0, bytes: 0, skipped: [] };
+        const maxSkippedDetails = 50;
+
+        function recordSkip(entryPath, error) {
+            const relativePath = toRelativeMemoryPath(sourceRoot, entryPath);
+            const reason = error && error.code ? error.code : (error && error.message) || 'UNKNOWN';
+            if (summary.skipped.length < maxSkippedDetails) {
+                summary.skipped.push({ path: relativePath, reason });
+            }
+            console.warn(`[WebServer] Memory merge skipped ${relativePath}: ${reason}`);
+        }
+
+        function mergeEntry(sourcePath, targetPath) {
+            let stat;
+            try {
+                stat = fs.lstatSync(sourcePath);
+            } catch (error) {
+                recordSkip(sourcePath, error);
+                return;
+            }
+
+            if (stat.isSymbolicLink()) {
+                recordSkip(sourcePath, { code: 'SYMLINK_SKIPPED' });
+                return;
+            }
+
+            if (stat.isDirectory()) {
+                try {
+                    fs.mkdirSync(targetPath, { recursive: true });
+                    summary.directories += 1;
+                } catch (error) {
+                    recordSkip(sourcePath, error);
+                    return;
+                }
+
+                let entries = [];
+                try {
+                    entries = fs.readdirSync(sourcePath, { withFileTypes: true });
+                } catch (error) {
+                    recordSkip(sourcePath, error);
+                    return;
+                }
+
+                for (const entry of entries) {
+                    mergeEntry(path.join(sourcePath, entry.name), path.join(targetPath, entry.name));
+                }
+                return;
+            }
+
+            if (!stat.isFile()) {
+                recordSkip(sourcePath, { code: 'UNSUPPORTED_ENTRY' });
+                return;
+            }
+
+            try {
+                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+                fs.copyFileSync(sourcePath, targetPath);
+                summary.files += 1;
+                summary.bytes += stat.size;
+            } catch (error) {
+                recordSkip(sourcePath, error);
+            }
+        }
+
+        mergeEntry(sourceRoot, targetRoot);
+        return summary;
+    }
+
     function isWindowsPathLockedError(error) {
         return process.platform === 'win32'
             && error
@@ -180,6 +249,29 @@ module.exports = function registerGolemRoutes(server) {
         return null;
     }
 
+    function detectMemoryLockHints(memoryDir) {
+        const root = path.resolve(memoryDir);
+        const candidates = [
+            'SingletonLock',
+            'SingletonSocket',
+            'SingletonCookie',
+            'RunningChromeVersion',
+            path.join('Default', 'LOCK'),
+            path.join('Default', 'Network', 'Cookies'),
+        ];
+
+        const hits = [];
+        for (const rel of candidates) {
+            const full = path.join(root, rel);
+            try {
+                if (fs.existsSync(full)) hits.push(full);
+            } catch {
+                // ignore
+            }
+        }
+        return hits;
+    }
+
     async function startTelegramPollingIfAvailable(instance, golemId, reason) {
         const bot = instance && instance.brain && instance.brain.tgBot;
         if (!bot || typeof bot.startPolling !== 'function') return;
@@ -191,6 +283,51 @@ module.exports = function registerGolemRoutes(server) {
         } catch (botErr) {
             console.warn(`⚠️ [Bot] ${golemId} Polling failed (${reason}):`, botErr.message);
         }
+    }
+
+    async function quiesceContextsForMemoryReincarnation(targetMemoryDir) {
+        const report = {
+            attempted: 0,
+            paused: [],
+            failed: [],
+        };
+        const normalizedTarget = path.resolve(targetMemoryDir);
+
+        for (const [golemId, instance] of server.contexts.entries()) {
+            const brain = instance && instance.brain;
+            if (!brain) continue;
+
+            const brainDir = path.resolve(String(brain.userDataDir || ''));
+            if (!brainDir || brainDir !== normalizedTarget) continue;
+
+            report.attempted += 1;
+            try {
+                if (instance.autonomy && typeof instance.autonomy.stop === 'function') {
+                    await instance.autonomy.stop();
+                }
+
+                const bot = brain.tgBot;
+                if (bot && typeof bot.stopPolling === 'function') {
+                    await bot.stopPolling().catch(() => {});
+                }
+
+                if (typeof brain.dispose === 'function') {
+                    await brain.dispose({ closeContext: true });
+                } else if (brain.browser && typeof brain.browser.close === 'function') {
+                    await brain.browser.close().catch(() => {});
+                }
+
+                brain.status = 'not_started';
+                report.paused.push(golemId);
+                console.log(`🧊 [WebServer] Quiesced Golem context for memory reincarnation: ${golemId}`);
+            } catch (error) {
+                const message = error && error.message ? error.message : String(error);
+                report.failed.push({ golemId, message });
+                console.warn(`⚠️ [WebServer] Failed to quiesce ${golemId} before memory reincarnation: ${message}`);
+            }
+        }
+
+        return report;
     }
 
     router.get('/api/golems', (req, res) => {
@@ -393,7 +530,7 @@ module.exports = function registerGolemRoutes(server) {
         }
     });
 
-    router.post('/api/golems/memory-reincarnation/import', requireGolemOps, (req, res) => {
+    router.post('/api/golems/memory-reincarnation/import', requireGolemOps, async (req, res) => {
         if (!ensureLocalFileAccess(req, res)) return;
 
         try {
@@ -405,6 +542,14 @@ module.exports = function registerGolemRoutes(server) {
             const ConfigManager = require('../../src/config/index');
             const targetMemoryDir = path.resolve(ConfigManager.MEMORY_BASE_DIR);
             const sourceMemoryDir = path.resolve(source.memoryDir);
+            const quiesceReport = await quiesceContextsForMemoryReincarnation(targetMemoryDir);
+            if (quiesceReport.failed.length > 0) {
+                return res.status(409).json({
+                    error: '記憶轉生前無法暫停目前執行中的 Golem，已中止替換以避免資料不一致。',
+                    detail: '請先停止相關 Golem 或重啟後先不要啟動，再重試記憶轉生。',
+                    quiesceReport,
+                });
+            }
 
             if (sourceMemoryDir === targetMemoryDir) {
                 return res.status(400).json({ error: '來源與目前記憶資料夾相同，不需要轉生。' });
@@ -425,45 +570,84 @@ module.exports = function registerGolemRoutes(server) {
             }
 
             let backupPath = null;
+            let mergeFallbackUsed = false;
+            let mergeSummary = null;
             if (fs.existsSync(targetMemoryDir) && !isDirectoryEmpty(targetMemoryDir)) {
                 backupPath = `${targetMemoryDir}.before-reincarnation-${Date.now()}`;
                 try {
                     fs.renameSync(targetMemoryDir, backupPath);
                 } catch (error) {
-                    fs.rmSync(tempTargetDir, { recursive: true, force: true });
                     const friendly = buildMemoryReplaceError(error, targetMemoryDir);
-                    if (friendly) return res.status(friendly.status).json(friendly.body);
-                    throw error;
+                    if (friendly) {
+                        console.warn('⚠️ [WebServer] Replace blocked by lock; fallback to in-place merge mode.');
+                        mergeFallbackUsed = true;
+                        mergeSummary = mergeMemoryDirectoryBestEffort(sourceMemoryDir, targetMemoryDir);
+                        fs.rmSync(tempTargetDir, { recursive: true, force: true });
+                    } else {
+                        fs.rmSync(tempTargetDir, { recursive: true, force: true });
+                        throw error;
+                    }
                 }
             } else if (fs.existsSync(targetMemoryDir)) {
                 try {
                     fs.rmSync(targetMemoryDir, { recursive: true, force: true });
                 } catch (error) {
-                    fs.rmSync(tempTargetDir, { recursive: true, force: true });
                     const friendly = buildMemoryReplaceError(error, targetMemoryDir);
-                    if (friendly) return res.status(friendly.status).json(friendly.body);
-                    throw error;
+                    if (friendly) {
+                        console.warn('⚠️ [WebServer] Empty-dir cleanup blocked by lock; fallback to in-place merge mode.');
+                        mergeFallbackUsed = true;
+                        mergeSummary = mergeMemoryDirectoryBestEffort(sourceMemoryDir, targetMemoryDir);
+                        fs.rmSync(tempTargetDir, { recursive: true, force: true });
+                    } else {
+                        fs.rmSync(tempTargetDir, { recursive: true, force: true });
+                        throw error;
+                    }
                 }
             }
 
-            try {
-                fs.renameSync(tempTargetDir, targetMemoryDir);
-            } catch (error) {
-                const friendly = buildMemoryReplaceError(error, targetMemoryDir);
-                if (friendly) return res.status(friendly.status).json(friendly.body);
-                throw error;
+            if (!mergeFallbackUsed) {
+                try {
+                    fs.renameSync(tempTargetDir, targetMemoryDir);
+                } catch (error) {
+                    const friendly = buildMemoryReplaceError(error, targetMemoryDir);
+                    if (friendly) {
+                        console.warn('⚠️ [WebServer] Final rename blocked by lock; fallback to in-place merge mode.');
+                        mergeFallbackUsed = true;
+                        mergeSummary = mergeMemoryDirectoryBestEffort(sourceMemoryDir, targetMemoryDir);
+                        fs.rmSync(tempTargetDir, { recursive: true, force: true });
+                    } else {
+                        throw error;
+                    }
+                }
             }
             console.log(`🧬 [WebServer] Memory reincarnated from ${sourceMemoryDir} to ${targetMemoryDir}`);
+
+            const lockHints = detectMemoryLockHints(targetMemoryDir);
+            const effectiveSummary = mergeFallbackUsed && mergeSummary
+                ? {
+                    mode: 'merge-fallback',
+                    copiedFromTemp: summary,
+                    mergedInPlace: mergeSummary,
+                    skipped: [...summary.skipped, ...mergeSummary.skipped].slice(0, 50),
+                }
+                : {
+                    mode: 'replace',
+                    ...summary,
+                };
 
             return res.json({
                 success: true,
                 sourcePath: sourceMemoryDir,
                 targetPath: targetMemoryDir,
                 backupPath,
-                summary,
-                warning: summary.skipped.length > 0
-                    ? '部分檔案因權限或特殊檔案類型無法複製，已跳過；可讀取的記憶已完成轉生。'
-                    : '部分舊版技能、腳本或瀏覽器狀態可能無法完全相容新專案。'
+                quiesceReport,
+                summary: effectiveSummary,
+                lockHints,
+                warning: mergeFallbackUsed
+                    ? '偵測到 Windows/瀏覽器鎖定，已改用就地合併模式完成轉生；少數被鎖檔案可能略過，可關閉瀏覽器後再重試以補齊。'
+                    : summary.skipped.length > 0
+                        ? '部分檔案因權限或特殊檔案類型無法複製，已跳過；可讀取的記憶已完成轉生。'
+                        : '部分舊版技能、腳本或瀏覽器狀態可能無法完全相容新專案。'
             });
         } catch (e) {
             console.error('[WebServer] Failed to import reincarnated memory:', e);
@@ -498,8 +682,20 @@ module.exports = function registerGolemRoutes(server) {
     });
 
     router.post('/api/golems/setup', requireGolemOps, async (req, res) => {
-        const { golemId, aiName, userName, currentRole, tone, skills } = req.body;
+        const { golemId, aiName, userName, currentRole, tone, skills, operationId } = req.body;
         if (!golemId) return res.status(400).json({ error: 'Missing golemId' });
+        const emitSetupProgress = (payload = {}) => {
+            try {
+                if (server && server.io && typeof server.io.emit === 'function') {
+                    server.io.emit('setup:inject_progress', {
+                        golemId,
+                        operationId: operationId || null,
+                        ts: Date.now(),
+                        ...payload,
+                    });
+                }
+            } catch (_) {}
+        };
 
         let context = server.contexts.get(golemId);
 
@@ -523,6 +719,7 @@ module.exports = function registerGolemRoutes(server) {
         }
 
         try {
+            emitSetupProgress({ phase: 'setup_start', progress: 5, message: '初始化啟動流程...' });
             const personaManager = require('../../src/skills/core/persona');
             personaManager.save(context.brain.userDataDir, {
                 aiName: aiName || 'Golem',
@@ -530,27 +727,47 @@ module.exports = function registerGolemRoutes(server) {
                 currentRole: currentRole || '一個擁有長期記憶與自主意識的 AI 助手',
                 tone: tone || '預設口氣',
                 skills: skills || [],
+                defaultPersona: {
+                    aiName: aiName || 'Golem',
+                    userName: userName || 'Traveler',
+                    currentRole: currentRole || '一個擁有長期記憶與自主意識的 AI 助手',
+                    tone: tone || '預設口氣',
+                },
                 isNew: false
             });
 
             context.brain.status = 'running';
             server.isBooting = true;
+            context.brain._startupProgressReporter = async (progressPayload = {}) => {
+                emitSetupProgress({
+                    phase: progressPayload.phase || 'injecting',
+                    progress: Number(progressPayload.progress || 0),
+                    message: progressPayload.message || '初始提示詞注入中...',
+                    segmentIndex: progressPayload.segmentIndex || null,
+                    segmentTotal: progressPayload.segmentTotal || null,
+                });
+            };
 
             (async () => {
                 try {
                     try {
+                        emitSetupProgress({ phase: 'brain_init', progress: 15, message: '啟動核心與瀏覽器...' });
                         await context.brain.init();
+                        emitSetupProgress({ phase: 'brain_init_done', progress: 96, message: '核心啟動完成，收尾中...' });
                     } catch (err) {
                         console.error(`Failed to initialize Golem [${golemId}] after setup; keeping Telegram polling alive:`, err);
                         context.brain.status = 'error';
+                        emitSetupProgress({ phase: 'error', progress: 100, message: `啟動失敗：${err.message || String(err)}` });
                     }
                     await startTelegramPollingIfAvailable(context, golemId, 'setup');
 
                     if (context.autonomy && typeof context.autonomy.start === 'function') {
                         context.autonomy.start();
                     }
+                    emitSetupProgress({ phase: 'done', progress: 100, message: '初始提示詞注入完成，Golem 已可使用。' });
                 } finally {
                     server.isBooting = false;
+                    context.brain._startupProgressReporter = null;
                     console.log(`✅ [WebServer] Setup complete for ${golemId}. Dashboard is ready.`);
                 }
             })();

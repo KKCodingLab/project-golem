@@ -1,0 +1,31 @@
+{
+  "id": "collab-calendar",
+  "name": "協作日曆",
+  "description": "讀取、新增、更新、刪除使用者與 Golem 共用的行事曆事件。支援查詢今日/未來行程、關鍵字搜尋。",
+  "type": "productivity",
+  "enabled": true,
+  "action": "collab-calendar",
+  "entry": "index.js",
+  "prompt": "skill.md",
+  "triggers": [
+    "行程",
+    "日曆",
+    "行事曆",
+    "calendar",
+    "今天有什麼",
+    "明天有什麼",
+    "這週",
+    "下週",
+    "新增行程",
+    "加入行程",
+    "排行程",
+    "幫我記",
+    "有什麼約",
+    "約了什麼",
+    "協作日曆",
+    "collab calendar",
+    "查行程",
+    "刪除行程",
+    "修改行程"
+  ]
+}

@@ -1,5 +1,6 @@
 const { CONFIG } = require('../config');
 const MessageManager = require('./MessageManager');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 // ============================================================
 // 🔌 Universal Context (通用語境層)
@@ -190,10 +191,29 @@ class UniversalContext {
     async reply(content, options) {
         if (this.isInteraction) {
             try {
+                const payload = { content, flags: 64 };
+                if (options && options.reply_markup && options.reply_markup.inline_keyboard) {
+                    const rows = options.reply_markup.inline_keyboard
+                        .filter((row) => Array.isArray(row) && row.length > 0)
+                        .slice(0, 5)
+                        .map((row) => {
+                            const actionRow = new ActionRowBuilder();
+                            row.slice(0, 5).forEach((btn) => {
+                                actionRow.addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(String(btn.callback_data || 'RPG_STATUS'))
+                                        .setLabel(String(btn.text || '選項'))
+                                        .setStyle(ButtonStyle.Primary)
+                                );
+                            });
+                            return actionRow;
+                        });
+                    if (rows.length > 0) payload.components = rows;
+                }
                 if (!this.event.deferred && !this.event.replied) {
-                    return await this.event.reply({ content, flags: 64 });
+                    return await this.event.reply(payload);
                 } else {
-                    return await this.event.followUp({ content, flags: 64 });
+                    return await this.event.followUp(payload);
                 }
             } catch (e) {
                 console.error('UniversalContext Discord Reply Error:', e.message);

@@ -85,10 +85,13 @@ export default function ReferenceFilesPage() {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<SearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
     const loadFiles = useCallback(async () => {
         const data = await apiGet<{ files?: ReferenceFile[] }>("/api/reference-files");
-        setFiles(data.files || []);
+        const nextFiles = data.files || [];
+        setFiles(nextFiles);
+        setSelectedIds((prev) => prev.filter((id) => nextFiles.some((file) => file.id === id)));
     }, []);
 
     useEffect(() => {
@@ -153,6 +156,21 @@ export default function ReferenceFilesPage() {
         }
     }, [loadFiles, toast]);
 
+    const removeSelected = useCallback(async () => {
+        if (selectedIds.length === 0) return;
+        try {
+            setBusyId("__bulk__");
+            await apiPostWrite("/api/reference-files/batch-delete", { ids: selectedIds });
+            await loadFiles();
+            setSelectedIds([]);
+            toast.success("已批次移除參考文件", `已刪除 ${selectedIds.length} 個項目。`);
+        } catch (error) {
+            toast.error("批次移除失敗", error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusyId(null);
+        }
+    }, [loadFiles, selectedIds, toast]);
+
     const runSearch = useCallback(async () => {
         if (!query.trim()) {
             setResults([]);
@@ -175,6 +193,8 @@ export default function ReferenceFilesPage() {
         const chunks = files.reduce((sum, file) => sum + (file.chunkCount || 0), 0);
         return { ready, failed, chunks };
     }, [files]);
+
+    const allSelected = files.length > 0 && selectedIds.length === files.length;
 
     return (
         <div className="h-full overflow-auto bg-background text-foreground">
@@ -310,9 +330,28 @@ export default function ReferenceFilesPage() {
                     <section className="rounded-xl border border-border bg-card">
                         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                             <div className="text-sm font-semibold">已登記參考文件</div>
-                            <Button type="button" variant="secondary" onClick={loadFiles}>
-                                <RefreshCcw className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={(event) => {
+                                            if (event.target.checked) {
+                                                setSelectedIds(files.map((file) => file.id));
+                                            } else {
+                                                setSelectedIds([]);
+                                            }
+                                        }}
+                                    />
+                                    全選
+                                </label>
+                                <Button type="button" variant="secondary" onClick={removeSelected} disabled={selectedIds.length === 0 || busyId === "__bulk__"} className="h-8 px-2 text-red-300 hover:text-red-200">
+                                    {busyId === "__bulk__" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                </Button>
+                                <Button type="button" variant="secondary" onClick={loadFiles}>
+                                    <RefreshCcw className="h-4 w-4" />
+                                </Button>
+                            </div>
                         </div>
                         <div className="divide-y divide-border/70">
                             {files.length === 0 ? (
@@ -324,6 +363,16 @@ export default function ReferenceFilesPage() {
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedIds.includes(file.id)}
+                                                    onChange={(event) => {
+                                                        setSelectedIds((prev) => {
+                                                            if (event.target.checked) return Array.from(new Set([...prev, file.id]));
+                                                            return prev.filter((id) => id !== file.id);
+                                                        });
+                                                    }}
+                                                />
                                                 {file.status === "ready" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /> : file.status === "failed" ? <XCircle className="h-4 w-4 shrink-0 text-red-300" /> : <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-300" />}
                                                 <h3 className="truncate text-sm font-semibold">{file.name}</h3>
                                             </div>

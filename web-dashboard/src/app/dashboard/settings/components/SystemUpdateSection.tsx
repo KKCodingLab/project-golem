@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import { Activity, AlertTriangle, CheckCircle2, DownloadCloud, Loader2 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, DownloadCloud, Loader2, Save } from "lucide-react";
 import { useToast } from "@/components/ui/toast-provider";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { useQuery } from "@/hooks/useQuery";
@@ -41,7 +41,9 @@ export default function SystemUpdateSection() {
     const [keepOldData, setKeepOldData] = useState(true);
     const [keepMemory, setKeepMemory] = useState(true);
     const [updateDone, setUpdateDone] = useState(false);
+    const [isBackingUp, setIsBackingUp] = useState(false);
     const socketRef = useRef<Socket | null>(null);
+    const updateStartLockRef = useRef(false);
 
     const updateInfoQuery = useQuery<UpdateInfo>(() => apiGet<UpdateInfo>("/api/system/update/check"), []);
     const logInfoQuery = useQuery<LogInfoResponse>(() => apiGet<LogInfoResponse>("/api/system/log-info"), []);
@@ -63,6 +65,8 @@ export default function SystemUpdateSection() {
     })();
 
     const handleStartUpdate = async () => {
+        if (isUpdating || updateStartLockRef.current) return;
+        updateStartLockRef.current = true;
         setIsUpdating(true);
         setProgress(0);
         setStatusText(t("settings.update.status.connecting"));
@@ -87,11 +91,13 @@ export default function SystemUpdateSection() {
                 setProgress(100);
                 setUpdateDone(true);
                 setIsUpdating(false);
+                updateStartLockRef.current = false;
                 socket.disconnect();
                 socketRef.current = null;
             } else if (data.status === "error") {
                 setStatusText(data.message ?? "");
                 setIsUpdating(false);
+                updateStartLockRef.current = false;
                 socket.disconnect();
                 socketRef.current = null;
             }
@@ -104,6 +110,7 @@ export default function SystemUpdateSection() {
                 setStatusText(t("settings.update.status.startFailed"));
                 toast.error(t("settings.update.toast.startFailedTitle"), t("settings.update.toast.startFailedBody"));
                 setIsUpdating(false);
+                updateStartLockRef.current = false;
                 socket.disconnect();
                 socketRef.current = null;
             }
@@ -142,6 +149,35 @@ export default function SystemUpdateSection() {
         }
     };
 
+    const handleBackupExport = async () => {
+        if (isBackingUp) return;
+        setIsBackingUp(true);
+        try {
+            const response = await fetch("/api/system/backup/export", { method: "GET", credentials: "include" });
+            if (!response.ok) {
+                const text = await response.text().catch(() => "");
+                throw new Error(text || "Backup export failed");
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const disposition = response.headers.get("Content-Disposition") || "";
+            const matched = disposition.match(/filename=\"?([^"]+)\"?/i);
+            const fileName = matched?.[1] || `golem-backup-${Date.now()}.json`;
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(url);
+            toast.success("備份完成", `已下載備份檔：${fileName}`);
+        } catch (error: unknown) {
+            toast.error("備份失敗", getErrorMessage(error, "無法匯出備份檔"));
+        } finally {
+            setIsBackingUp(false);
+        }
+    };
+
     if (!updateInfo) return null;
 
     return (
@@ -162,6 +198,14 @@ export default function SystemUpdateSection() {
                     className="px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg text-sm transition-all font-medium"
                 >
                     {t("settings.update.openButton")}
+                </button>
+                <button
+                    onClick={handleBackupExport}
+                    disabled={isBackingUp}
+                    className={`px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-sm transition-all font-medium inline-flex items-center gap-2 ${isBackingUp ? "opacity-60 cursor-not-allowed" : ""}`}
+                >
+                    {isBackingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {isBackingUp ? "備份中..." : "一鍵備份"}
                 </button>
             </div>
 

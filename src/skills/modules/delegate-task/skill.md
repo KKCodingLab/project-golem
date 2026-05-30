@@ -9,7 +9,7 @@
 
 ## 使用格式
 ```json
-{"action": "delegate_task", "subtask": "請查閱最新 React 19 的文件並總結主要變更", "toolset": "research", "context": "目前我們正在升級一個舊的 React 專案", "verify_cmd": "npm run typecheck", "max_retries": 3}
+{"action":"delegate-task","args":{"subtask":"請查閱最新 React 19 的文件並總結主要變更","toolset":"research","context":"目前我們正在升級一個舊的 React 專案","verify_cmd":"npm run typecheck","max_retries":3}}
 ```
 
 - `subtask`：必填，具體派給子智能體的任務描述。

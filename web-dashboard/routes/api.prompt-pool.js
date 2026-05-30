@@ -496,6 +496,46 @@ function sortPromptItems(items) {
     return [...items].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
+function normalizeImportMode(value) {
+    const mode = String(value || '').trim().toLowerCase();
+    if (mode === 'replace') return 'replace';
+    return 'merge';
+}
+
+function parseImportedPromptItems(rawItems) {
+    if (!Array.isArray(rawItems)) {
+        throw createHttpError(400, '匯入格式錯誤：items 必須為陣列');
+    }
+
+    const parsed = [];
+    const skipped = [];
+
+    for (let i = 0; i < rawItems.length; i += 1) {
+        const row = rawItems[i];
+        const indexLabel = `#${i + 1}`;
+        try {
+            const shortcut = normalizeShortcut(row && row.shortcut);
+            const prompt = normalizePrompt(row && row.prompt);
+            const note = normalizeNote(row && row.note);
+
+            if (isReservedSystemCommandShortcut(shortcut)) {
+                skipped.push({ index: i, shortcut, reason: 'reserved_system_command' });
+                continue;
+            }
+
+            parsed.push({ shortcut, prompt, note, sourceIndex: i, sourceLabel: indexLabel });
+        } catch (error) {
+            skipped.push({
+                index: i,
+                shortcut: String(row && row.shortcut ? row.shortcut : ''),
+                reason: error instanceof Error ? error.message : 'invalid_row',
+            });
+        }
+    }
+
+    return { parsed, skipped };
+}
+
 function readPromptPool() {
     ensurePromptPoolStorage();
     try {
@@ -590,6 +630,117 @@ module.exports = function registerPromptPoolRoutes(server) {
         } catch (error) {
             console.error('[PromptPool] Failed to fetch audit records:', error);
             return res.status(500).json({ error: 'Failed to fetch audit records' });
+        }
+    });
+
+    router.get('/api/prompt-pool/export', (req, res) => {
+        try {
+            const items = readPromptPool().map((item) => ({
+                shortcut: item.shortcut,
+                prompt: item.prompt,
+                note: item.note || '',
+            }));
+            const payload = {
+                schemaVersion: 1,
+                exportedAt: new Date().toISOString(),
+                itemCount: items.length,
+                items,
+            };
+            return res.json({ success: true, ...payload });
+        } catch (error) {
+            console.error('[PromptPool] Failed to export prompt pool:', error);
+            return res.status(500).json({ error: 'Failed to export prompt pool' });
+        }
+    });
+
+    router.post('/api/prompt-pool/import', requirePromptPoolWrite, async (req, res) => {
+        try {
+            const mode = normalizeImportMode(req.body?.mode);
+            const rawItems = Array.isArray(req.body?.items)
+                ? req.body.items
+                : (Array.isArray(req.body?.payload?.items) ? req.body.payload.items : null);
+            const { parsed, skipped } = parseImportedPromptItems(rawItems);
+
+            const result = await withSerializedMutation(() => {
+                const now = new Date().toISOString();
+                const current = readPromptPool();
+                const baseItems = mode === 'replace' ? [] : current.map((item) => ({ ...item }));
+                const byShortcut = new Map(baseItems.map((item) => [toShortcutKey(item.shortcut), item]));
+                let created = 0;
+                let updated = 0;
+
+                // 匯入內部若同 shortcut 重覆，最後一筆覆蓋前一筆。
+                const dedupedImported = new Map();
+                for (const row of parsed) {
+                    dedupedImported.set(toShortcutKey(row.shortcut), row);
+                }
+
+                for (const [, row] of dedupedImported.entries()) {
+                    const shortcutKey = toShortcutKey(row.shortcut);
+                    const existing = byShortcut.get(shortcutKey);
+                    if (existing) {
+                        existing.shortcut = row.shortcut;
+                        existing.prompt = row.prompt;
+                        existing.note = row.note;
+                        existing.updatedAt = now;
+                        updated += 1;
+                    } else {
+                        byShortcut.set(shortcutKey, {
+                            id: createPromptId(),
+                            shortcut: row.shortcut,
+                            prompt: row.prompt,
+                            note: row.note,
+                            createdAt: now,
+                            updatedAt: now,
+                        });
+                        created += 1;
+                    }
+                }
+
+                const nextItems = [...byShortcut.values()];
+                if (nextItems.length > MAX_ITEMS) {
+                    throw createHttpError(400, `匯入後超過上限 ${MAX_ITEMS} 筆，請減少資料量`);
+                }
+
+                const written = writePromptPool(nextItems);
+                return {
+                    items: written,
+                    created,
+                    updated,
+                    importedCount: dedupedImported.size,
+                };
+            });
+
+            appendPromptPoolAuditRecord(createAuditMeta(req, 'prompt_pool_import', {
+                mode,
+                importedCount: result.importedCount,
+                created: result.created,
+                updated: result.updated,
+                skippedCount: skipped.length,
+            }));
+
+            const payload = buildPromptPoolItemsPayload(result.items);
+            return res.json({
+                success: true,
+                mode,
+                importedCount: result.importedCount,
+                created: result.created,
+                updated: result.updated,
+                skippedCount: skipped.length,
+                skipped,
+                items: payload.items,
+                topUsedShortcuts: payload.topUsedShortcuts,
+                topUsedShortcuts7d: payload.topUsedShortcuts7d,
+                topUsedShortcuts30d: payload.topUsedShortcuts30d,
+                usageTrend14d: payload.usageTrend14d,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const status = Number(error && error.statusCode) || 500;
+            if (status === 500) {
+                console.error('[PromptPool] Failed to import prompt pool:', error);
+            }
+            return res.status(status).json({ error: message });
         }
     });
 

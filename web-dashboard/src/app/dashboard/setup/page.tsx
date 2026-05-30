@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiGet, apiPost } from "@/lib/api-client";
+import { socket } from "@/lib/socket";
 
 interface Preset {
     id: string;
@@ -50,13 +51,71 @@ interface MemoryImportResponse {
     targetPath?: string;
     backupPath?: string | null;
     summary?: {
-        files: number;
-        directories: number;
-        bytes: number;
+        mode?: "replace" | "merge-fallback";
+        files?: number;
+        directories?: number;
+        bytes?: number;
         skipped?: { path: string; reason: string }[];
+        copiedFromTemp?: {
+            files?: number;
+            directories?: number;
+            bytes?: number;
+            skipped?: { path: string; reason: string }[];
+        };
+        mergedInPlace?: {
+            files?: number;
+            directories?: number;
+            bytes?: number;
+            skipped?: { path: string; reason: string }[];
+        };
     };
+    lockHints?: string[];
     skipped?: { path: string; reason: string }[];
     warning?: string;
+}
+
+interface SystemBackupRestoreResponse {
+    success?: boolean;
+    error?: string;
+    message?: string;
+    summary?: {
+        restoredFiles?: number;
+        sections?: Record<string, number>;
+    };
+}
+
+interface SystemBackupPreviewResponse {
+    success?: boolean;
+    error?: string;
+    preview?: {
+        schemaVersion?: number;
+        sourceAppVersion?: string;
+        createdAt?: string | null;
+        migrationApplied?: string;
+        sections?: {
+            name: string;
+            fileCount: number;
+            bytes: number;
+            skippedCount: number;
+            restorable: boolean;
+            risk: string;
+        }[];
+        totals?: {
+            files: number;
+            bytes: number;
+            unrestorableSections: number;
+            partialSections: number;
+        };
+        warnings?: string[];
+    };
+}
+
+function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -75,7 +134,7 @@ const SKILL_META: Record<string, { label: string; desc: string; icon: React.Comp
     "spotify": { label: "Spotify", desc: "音樂搜尋與播放清單管理", icon: Moon },
     "image-prompt": { label: "圖像 Prompt", desc: "生成 AI 繪圖提示詞", icon: Palette },
     "wiki": { label: "Wikipedia", desc: "查詢維基百科知識庫", icon: BookOpen },
-    "notebooklm": { label: "NotebookLM", desc: "Google NotebookLM 整合", icon: BrainCircuit },
+    "notebooklm-studio": { label: "NotebookLM Studio", desc: "NotebookLM 研究工作流與產物交付", icon: BrainCircuit },
 };
 
 function SkillBadge({
@@ -133,12 +192,41 @@ export default function GolemSetupPage() {
     const [skills, setSkills] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [showRoleHelp, setShowRoleHelp] = useState(false);
-    const [memoryMode, setMemoryMode] = useState<"fresh" | "reincarnate">("fresh");
+    const [memoryMode, setMemoryMode] = useState<"fresh" | "reincarnate" | "backup_restore">("fresh");
     const [memoryPathInput, setMemoryPathInput] = useState("");
     const [memoryBrowser, setMemoryBrowser] = useState<MemoryBrowseResponse | null>(null);
     const [isBrowsingMemory, setIsBrowsingMemory] = useState(false);
     const [isImportingMemory, setIsImportingMemory] = useState(false);
     const [memoryImportResult, setMemoryImportResult] = useState<MemoryImportResponse | null>(null);
+    const [backupFileName, setBackupFileName] = useState("");
+    const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+    const [backupRestoreResult, setBackupRestoreResult] = useState<SystemBackupRestoreResponse | null>(null);
+    const [backupPayload, setBackupPayload] = useState<unknown>(null);
+    const [backupPreview, setBackupPreview] = useState<SystemBackupPreviewResponse["preview"] | null>(null);
+    const [isPreviewingBackup, setIsPreviewingBackup] = useState(false);
+    const [setupOperationId, setSetupOperationId] = useState<string | null>(null);
+    const [showInjectOverlay, setShowInjectOverlay] = useState(false);
+    const [injectProgress, setInjectProgress] = useState(0);
+    const [injectMessage, setInjectMessage] = useState("初始提示詞尚在注入中，請稍後...");
+
+    const extractSkippedItems = useCallback((result: MemoryImportResponse | null) => {
+        if (!result) return [] as { path: string; reason: string }[];
+        const direct = result.summary?.skipped || [];
+        const fromMerge = result.summary?.mergedInPlace?.skipped || [];
+        const legacy = result.skipped || [];
+        return [...direct, ...fromMerge, ...legacy].slice(0, 8);
+    }, []);
+
+    const getCopiedFilesCount = useCallback((result: MemoryImportResponse | null) => {
+        if (!result) return 0;
+        const mode = result.summary?.mode;
+        if (mode === "merge-fallback") {
+            const a = Number(result.summary?.copiedFromTemp?.files || 0);
+            const b = Number(result.summary?.mergedInPlace?.files || 0);
+            return a + b;
+        }
+        return Number(result.summary?.files || 0);
+    }, []);
 
     // Fetch templates from backend
     useEffect(() => {
@@ -174,6 +262,39 @@ export default function GolemSetupPage() {
             router.push("/dashboard");
         }
     }, [activeGolemStatus, activeGolem, isLoadingGolems, router]);
+
+    useEffect(() => {
+        const onProgress = (payload: {
+            golemId?: string;
+            operationId?: string | null;
+            progress?: number;
+            message?: string;
+            phase?: string;
+            segmentIndex?: number | null;
+            segmentTotal?: number | null;
+        }) => {
+            if (!setupOperationId) return;
+            if ((payload.operationId || null) !== setupOperationId) return;
+            if (activeGolem && payload.golemId && payload.golemId !== activeGolem) return;
+            if (typeof payload.progress === "number") {
+                setInjectProgress(Math.max(0, Math.min(100, Math.round(payload.progress))));
+            }
+            const segmentText = (payload.segmentIndex && payload.segmentTotal)
+                ? `（第 ${payload.segmentIndex}/${payload.segmentTotal} 段）`
+                : "";
+            setInjectMessage(payload.message ? `${payload.message}${segmentText}` : "初始提示詞尚在注入中，請稍後...");
+            if (payload.phase === "done" || payload.phase === "error") {
+                setTimeout(() => {
+                    setShowInjectOverlay(false);
+                    setSetupOperationId(null);
+                }, 800);
+            }
+        };
+        socket.on("setup:inject_progress", onProgress);
+        return () => {
+            socket.off("setup:inject_progress", onProgress);
+        };
+    }, [activeGolem, setupOperationId]);
 
     const applyPreset = useCallback((preset: Preset) => {
         setActivePresetId(preset.id);
@@ -226,11 +347,12 @@ export default function GolemSetupPage() {
 
             if (data.success) {
                 setMemoryImportResult(data);
-                const skippedCount = data.summary?.skipped?.length ?? 0;
+                const skippedCount = extractSkippedItems(data).length;
+                const copiedFiles = getCopiedFilesCount(data);
                 if (skippedCount > 0) {
-                    toast.warning("記憶轉生部分完成", `已複製 ${data.summary?.files ?? 0} 個檔案，另有 ${skippedCount} 個項目因權限或特殊類型被跳過。`);
+                    toast.warning("記憶轉生部分完成", `已複製 ${copiedFiles} 個檔案，另有 ${skippedCount} 個項目因權限或特殊類型被跳過。`);
                 } else {
-                    toast.success("記憶轉生完成", `已複製 ${data.summary?.files ?? 0} 個記憶檔案。`);
+                    toast.success("記憶轉生完成", `已複製 ${copiedFiles} 個記憶檔案。`);
                 }
             } else {
                 setMemoryImportResult(data);
@@ -242,7 +364,74 @@ export default function GolemSetupPage() {
         } finally {
             setIsImportingMemory(false);
         }
-    }, [memoryPathInput, toast]);
+    }, [extractSkippedItems, getCopiedFilesCount, memoryPathInput, toast]);
+
+    const stopGolemAndRetryMemoryImport = useCallback(async () => {
+        if (!activeGolem) {
+            toast.error("無法停止 Golem", "目前沒有可停止的 Golem 實例。");
+            return;
+        }
+        try {
+            setIsImportingMemory(true);
+            await apiPost("/api/golems/stop", { id: activeGolem });
+            toast.success("已停止 Golem", "已嘗試釋放記憶體與瀏覽器鎖定，準備重試轉生。");
+            await importReincarnatedMemory();
+        } catch (e) {
+            const message = e instanceof Error ? e.message : "停止 Golem 失敗";
+            toast.error("停止 Golem 失敗", message);
+        } finally {
+            setIsImportingMemory(false);
+        }
+    }, [activeGolem, importReincarnatedMemory, toast]);
+
+    const handlePreviewBackupFromFile = useCallback(async (file: File) => {
+        try {
+            setIsPreviewingBackup(true);
+            setBackupRestoreResult(null);
+            setBackupPreview(null);
+            setBackupFileName(file.name);
+            const text = await file.text();
+            const payload = JSON.parse(text);
+            setBackupPayload(payload);
+            const data = await apiPost<SystemBackupPreviewResponse>("/api/system/backup/restore/preview", payload);
+            if (data.success && data.preview) {
+                setBackupPreview(data.preview);
+                toast.success("預檢完成", "請確認可還原項目與風險後再執行還原。");
+            } else {
+                toast.error("預檢失敗", data.error || "無法解析備份檔");
+            }
+        } catch (e) {
+            const message = e instanceof Error ? e.message : "備份檔解析或預檢失敗";
+            setBackupRestoreResult({ success: false, error: message });
+            toast.error("預檢失敗", message);
+        } finally {
+            setIsPreviewingBackup(false);
+        }
+    }, [toast]);
+
+    const handleConfirmRestoreBackup = useCallback(async () => {
+        if (!backupPayload) {
+            toast.error("還原失敗", "請先選擇備份檔並完成預檢。");
+            return;
+        }
+        try {
+            setIsRestoringBackup(true);
+            const data = await apiPost<SystemBackupRestoreResponse>("/api/system/backup/restore", backupPayload);
+            setBackupRestoreResult(data);
+            if (data.success) {
+                const restored = Number(data.summary?.restoredFiles || 0);
+                toast.success("備份還原完成", `已還原 ${restored} 個檔案。`);
+            } else {
+                toast.error("備份還原失敗", data.error || "無法還原備份檔");
+            }
+        } catch (e) {
+            const message = e instanceof Error ? e.message : "備份檔還原失敗";
+            setBackupRestoreResult({ success: false, error: message });
+            toast.error("備份還原失敗", message);
+        } finally {
+            setIsRestoringBackup(false);
+        }
+    }, [backupPayload, toast]);
 
     // Extra skills that exist in ALL_AVAILABLE_SKILLS but not in the template
     const extraSkillsToShow = ALL_AVAILABLE_SKILLS.filter(s => !skills.includes(s));
@@ -259,9 +448,18 @@ export default function GolemSetupPage() {
             toast.warning("尚未完成記憶轉生", "請先匯入舊記憶，或選擇略過並開啟全新代理人。");
             return;
         }
+        if (memoryMode === "backup_restore" && !backupRestoreResult?.success) {
+            toast.warning("尚未完成備份還原", "請先匯入備份檔並完成還原。");
+            return;
+        }
 
         try {
             setIsLoading(true);
+            const operationId = `setup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            setSetupOperationId(operationId);
+            setInjectProgress(3);
+            setInjectMessage("正在啟動核心，準備注入初始提示詞...");
+            setShowInjectOverlay(true);
             const data = await apiPost<{ success?: boolean; error?: string }>("/api/golems/setup", {
                 golemId: activeGolem,
                 aiName,
@@ -269,15 +467,20 @@ export default function GolemSetupPage() {
                 currentRole: role,
                 tone,
                 skills,
+                operationId,
             });
 
             if (data.success) {
                 await refreshGolems();
                 router.push("/dashboard");
             } else {
+                setShowInjectOverlay(false);
+                setSetupOperationId(null);
                 toast.error("建立失敗", data.error || "建立失敗");
             }
         } catch {
+            setShowInjectOverlay(false);
+            setSetupOperationId(null);
             toast.error("設定失敗", "設定過程中發生錯誤，請檢查網路狀態。");
         } finally {
             setIsLoading(false);
@@ -299,7 +502,29 @@ export default function GolemSetupPage() {
     }
 
     return (
-        <div className="flex-1 overflow-auto bg-background p-4 md:p-6 flex flex-col text-foreground">
+        <div className="flex-1 overflow-auto bg-background p-4 md:p-6 flex flex-col text-foreground relative">
+            {showInjectOverlay && (
+                <div className="fixed inset-0 z-[120] bg-black/65 backdrop-blur-sm flex items-center justify-center px-4">
+                    <div className="w-full max-w-lg rounded-2xl border border-primary/30 bg-card/95 p-6 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
+                                <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                            </div>
+                            <p className="text-sm md:text-base font-semibold text-foreground">
+                                初始提示詞尚在注入中，請稍後...
+                            </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-3">{injectMessage}</p>
+                        <div className="h-2 w-full rounded-full bg-secondary/60 overflow-hidden border border-border">
+                            <div
+                                className="h-full bg-gradient-to-r from-cyan-400 via-primary to-emerald-400 transition-all duration-300"
+                                style={{ width: `${injectProgress}%` }}
+                            />
+                        </div>
+                        <div className="mt-2 text-right text-xs text-primary font-mono">{injectProgress}%</div>
+                    </div>
+                </div>
+            )}
             <div className="max-w-7xl w-full mx-auto pb-12 pt-4 md:pt-8">
 
                 {/* Header */}
@@ -522,7 +747,10 @@ export default function GolemSetupPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
                                 <button
                                     type="button"
-                                    onClick={() => setMemoryMode("reincarnate")}
+                                    onClick={() => {
+                                        setMemoryMode("reincarnate");
+                                        setBackupRestoreResult(null);
+                                    }}
                                     className={cn(
                                         "text-left p-3 rounded-xl border transition-all",
                                         memoryMode === "reincarnate"
@@ -543,6 +771,7 @@ export default function GolemSetupPage() {
                                     onClick={() => {
                                         setMemoryMode("fresh");
                                         setMemoryImportResult(null);
+                                        setBackupRestoreResult(null);
                                     }}
                                     className={cn(
                                         "text-left p-3 rounded-xl border transition-all",
@@ -557,6 +786,27 @@ export default function GolemSetupPage() {
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                                         不帶入舊記憶，開啟全新的代理人。
+                                    </p>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setMemoryMode("backup_restore");
+                                        setMemoryImportResult(null);
+                                    }}
+                                    className={cn(
+                                        "text-left p-3 rounded-xl border transition-all sm:col-span-2",
+                                        memoryMode === "backup_restore"
+                                            ? "bg-primary/10 border-primary/40 text-foreground"
+                                            : "bg-secondary/30 border-border/60 text-muted-foreground hover:text-foreground hover:border-border"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-2 text-sm font-semibold">
+                                        <Copy className="w-4 h-4 text-primary" />
+                                        從備份檔還原
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                        使用一鍵備份 JSON 還原私人資料（支援 macOS / Windows / Linux）。
                                     </p>
                                 </button>
                             </div>
@@ -657,14 +907,25 @@ export default function GolemSetupPage() {
 
                                     {memoryImportResult?.success && (
                                         <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 leading-relaxed">
-                                            已從舊專案複製 {memoryImportResult.summary?.files ?? 0} 個檔案到新專案記憶庫。
+                                            已從舊專案複製 {getCopiedFilesCount(memoryImportResult)} 個檔案到新專案記憶庫。
+                                            {memoryImportResult.summary?.mode === "merge-fallback" && (
+                                                <span className="block mt-1 text-amber-200">
+                                                    偵測到 Windows/瀏覽器鎖定，已改用「就地合併」模式完成轉生。
+                                                </span>
+                                            )}
                                             {memoryImportResult.backupPath && (
                                                 <span className="block mt-1 text-emerald-300/75">原本的新專案記憶已備份：{memoryImportResult.backupPath}</span>
                                             )}
-                                            {(memoryImportResult.summary?.skipped?.length ?? 0) > 0 && (
+                                            {(extractSkippedItems(memoryImportResult).length ?? 0) > 0 && (
                                                 <span className="block mt-2 text-amber-200">
-                                                    有 {memoryImportResult.summary?.skipped?.length} 個項目因權限或特殊檔案類型被跳過：
-                                                    {memoryImportResult.summary?.skipped?.slice(0, 3).map((item) => ` ${item.path} (${item.reason})`).join("；")}
+                                                    有 {extractSkippedItems(memoryImportResult).length} 個項目因權限或特殊檔案類型被跳過：
+                                                    {extractSkippedItems(memoryImportResult).slice(0, 3).map((item) => ` ${item.path} (${item.reason})`).join("；")}
+                                                </span>
+                                            )}
+                                            {(memoryImportResult.lockHints?.length ?? 0) > 0 && (
+                                                <span className="block mt-2 text-amber-200">
+                                                    可能鎖定檔案：
+                                                    {memoryImportResult.lockHints?.slice(0, 3).map((item) => ` ${item}`).join("；")}
                                                 </span>
                                             )}
                                         </div>
@@ -695,6 +956,105 @@ export default function GolemSetupPage() {
                                                 執行記憶轉生
                                             </span>
                                         )}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={stopGolemAndRetryMemoryImport}
+                                        disabled={isImportingMemory || !memoryPathInput.trim() || !activeGolem}
+                                        className="w-full"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <HardDrive className="w-4 h-4" />
+                                            先停止 Golem 並重試轉生
+                                        </span>
+                                    </Button>
+                                </div>
+                            )}
+                            {memoryMode === "backup_restore" && (
+                                <div className="space-y-3 animate-in fade-in duration-200">
+                                    <label className="block">
+                                        <span className="block text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">備份檔案 (JSON)</span>
+                                        <input
+                                            type="file"
+                                            accept="application/json,.json"
+                                            disabled={isRestoringBackup || isPreviewingBackup}
+                                            onChange={(event) => {
+                                                const file = event.target.files?.[0];
+                                                if (!file) return;
+                                                void handlePreviewBackupFromFile(file);
+                                            }}
+                                            className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border file:border-border file:bg-secondary/60 file:px-3 file:py-2 file:text-xs file:text-foreground hover:file:bg-secondary"
+                                        />
+                                    </label>
+                                    {backupFileName && (
+                                        <p className="text-xs text-muted-foreground">已選檔案：{backupFileName}</p>
+                                    )}
+                                    {isPreviewingBackup && (
+                                        <div className="p-3 bg-primary/10 border border-primary/30 rounded-xl text-xs text-primary">
+                                            正在預檢備份檔，請稍候...
+                                        </div>
+                                    )}
+                                    {backupPreview && (
+                                        <div className="p-3 bg-secondary/30 border border-border rounded-xl text-xs text-muted-foreground space-y-2">
+                                            <p>來源版本：{backupPreview.sourceAppVersion || "unknown"} | Schema：v{backupPreview.schemaVersion} | Migration：{backupPreview.migrationApplied || "none"}</p>
+                                            <p>可處理檔案：{backupPreview.totals?.files ?? 0}，不可還原區段：{backupPreview.totals?.unrestorableSections ?? 0}，部分還原風險區段：{backupPreview.totals?.partialSections ?? 0}</p>
+                                            {(backupPreview.warnings || []).length > 0 && (
+                                                <p className="text-amber-300">{(backupPreview.warnings || []).join(" ")}</p>
+                                            )}
+                                            {(backupPreview.sections || []).length > 0 && (
+                                                <div className="mt-2 border border-border/70 rounded-lg overflow-hidden">
+                                                    <div className="grid grid-cols-12 gap-2 px-2 py-1.5 bg-background/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                                        <div className="col-span-4">Section</div>
+                                                        <div className="col-span-2 text-right">檔案數</div>
+                                                        <div className="col-span-2 text-right">大小</div>
+                                                        <div className="col-span-2 text-right">跳過</div>
+                                                        <div className="col-span-2 text-right">狀態</div>
+                                                    </div>
+                                                    {(backupPreview.sections || []).map((section) => {
+                                                        const riskClass = section.restorable
+                                                            ? (section.risk === "partial" ? "text-amber-300" : "text-emerald-300")
+                                                            : "text-rose-300";
+                                                        const statusText = section.restorable
+                                                            ? (section.risk === "partial" ? "部分還原" : "可還原")
+                                                            : "不可還原";
+                                                        return (
+                                                            <div key={section.name} className="grid grid-cols-12 gap-2 px-2 py-1.5 border-t border-border/50 text-[11px]">
+                                                                <div className="col-span-4 text-foreground truncate" title={section.name}>{section.name}</div>
+                                                                <div className="col-span-2 text-right text-foreground">{section.fileCount}</div>
+                                                                <div className="col-span-2 text-right text-foreground">{formatBytes(section.bytes)}</div>
+                                                                <div className="col-span-2 text-right text-muted-foreground">{section.skippedCount}</div>
+                                                                <div className={`col-span-2 text-right font-medium ${riskClass}`}>{statusText}</div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {isRestoringBackup && (
+                                        <div className="p-3 bg-primary/10 border border-primary/30 rounded-xl text-xs text-primary">
+                                            正在還原備份檔，請稍候...
+                                        </div>
+                                    )}
+                                    {backupRestoreResult?.success && (
+                                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 leading-relaxed">
+                                            還原完成，已還原 {Number(backupRestoreResult.summary?.restoredFiles || 0)} 個檔案。
+                                        </div>
+                                    )}
+                                    {backupRestoreResult && backupRestoreResult.success === false && (
+                                        <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-300 leading-relaxed">
+                                            還原失敗：{backupRestoreResult.error || "未知錯誤"}
+                                        </div>
+                                    )}
+                                    <Button
+                                        type="button"
+                                        variant="secondary"
+                                        onClick={handleConfirmRestoreBackup}
+                                        disabled={!backupPreview || isRestoringBackup || isPreviewingBackup}
+                                        className="w-full"
+                                    >
+                                        確認還原備份
                                     </Button>
                                 </div>
                             )}

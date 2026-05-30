@@ -8,6 +8,12 @@
   "entry": "index.js",
   "prompt": "skill.md",
   "toolsets": [],
-  "triggers": ["wiki", "知識庫", "保存成 wiki", "搜尋 wiki", "讀取 wiki"],
+  "triggers": [
+    "wiki",
+    "知識庫",
+    "保存成 wiki",
+    "搜尋 wiki",
+    "讀取 wiki"
+  ],
   "version": "1.0.0"
 }

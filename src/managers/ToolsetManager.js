@@ -17,7 +17,7 @@ const ATOMIC_TOOLS = {
     // 程式與演化
     code:    ['evolution', 'code-wizard'],
     // 網路與搜尋
-    search:  ['tool-explorer', 'optic-nerve', 'cloud'],
+    search:  ['tool-explorer', 'optic-nerve', 'cloud', 'duckduckgo-search', 'chrome-devtools'],
     // 多媒體
     media:   ['image-prompt', 'youtube', 'spotify'],
     // AI 協作
@@ -26,6 +26,8 @@ const ATOMIC_TOOLS = {
     mcp:     ['mcp'],
     // 社群整合
     social:  ['moltbot'],
+    // 生產力（日曆）
+    productivity: ['collab-calendar'],
 };
 
 // ── 場景工具集（Scene Toolsets）────────────────────────────────────
@@ -46,7 +48,7 @@ const SCENE_TOOLSETS = {
     research: {
         description: '研究模式：啟用網路搜尋、Wiki、記憶工具',
         emoji: '🔬',
-        includes: [...ATOMIC_TOOLS.system, ...ATOMIC_TOOLS.search, ...ATOMIC_TOOLS.knowledge, ...ATOMIC_TOOLS.memory],
+        includes: [...ATOMIC_TOOLS.system, ...ATOMIC_TOOLS.search, ...ATOMIC_TOOLS.knowledge, ...ATOMIC_TOOLS.memory, ...ATOMIC_TOOLS.productivity],
     },
 
     /**
@@ -66,7 +68,7 @@ const SCENE_TOOLSETS = {
         emoji: '🤖',
         includes: [
             ...ATOMIC_TOOLS.system, ...ATOMIC_TOOLS.memory, ...ATOMIC_TOOLS.knowledge,
-            ...ATOMIC_TOOLS.search, ...ATOMIC_TOOLS.agents,
+            ...ATOMIC_TOOLS.search, ...ATOMIC_TOOLS.agents, ...ATOMIC_TOOLS.productivity,
         ],
     },
 
@@ -88,7 +90,8 @@ const SCENE_TOOLSETS = {
         emoji: '🚀',
         includes: [
             ...ATOMIC_TOOLS.system, ...ATOMIC_TOOLS.memory, ...ATOMIC_TOOLS.knowledge,
-            ...ATOMIC_TOOLS.search, ...ATOMIC_TOOLS.code, ...ATOMIC_TOOLS.agents, ...ATOMIC_TOOLS.mcp,
+            ...ATOMIC_TOOLS.search, ...ATOMIC_TOOLS.code, ...ATOMIC_TOOLS.agents,
+            ...ATOMIC_TOOLS.mcp, ...ATOMIC_TOOLS.productivity,
         ],
     },
 };
@@ -247,6 +250,7 @@ class ToolsetManager {
             if (scene.excludes) output += `（排除 ${scene.excludes.length} 個）`;
             output += '\n\n';
         }
+        output += '_切換場景：`/toolset <名稱>`　查看目前狀態：`/toolset status`　查看所有技能：`/skills`_';
         return output.trim();
     }
 
@@ -268,6 +272,45 @@ class ToolsetManager {
     getMaxResultLength(platform) {
         const platformConfig = PLATFORM_TOOLSETS[platform];
         return platformConfig ? platformConfig.maxResultLength : 3800;
+    }
+
+    /**
+     * 動態同步已安裝的 package 技能到工具集。
+     * 把不在任何場景 includes 裡的技能加進 _customOverrides，
+     * 讓它們在所有場景都能被 ActionGate 放行。
+     * 由 GolemBrain._syncToolVectorIndex() 在啟動後呼叫。
+     * @param {string} [userDataDir]
+     */
+    syncInstalledPackageSkills(userDataDir) {
+        try {
+            const SkillPackageRegistry = require('./SkillPackageRegistry');
+            const pkgs = SkillPackageRegistry.listSkillPackages({ userDataDir })
+                .filter(p => p.enabled !== false);
+
+            // 收集所有場景已包含的工具 id
+            const allSceneTools = new Set();
+            for (const scene of Object.values(SCENE_TOOLSETS)) {
+                (scene.includes || []).forEach(t => allSceneTools.add(t));
+            }
+
+            let added = 0;
+            for (const pkg of pkgs) {
+                const id = pkg.id;
+                const action = pkg.action || id;
+                // 若不在任何場景，加進 customOverrides（全場景可用）
+                if (!allSceneTools.has(id) && !allSceneTools.has(action)) {
+                    this._customOverrides.add(id);
+                    if (action !== id) this._customOverrides.add(action);
+                    added++;
+                }
+            }
+
+            if (added > 0) {
+                console.log(`🔧 [ToolsetManager] 動態注入 ${added} 個 package 技能到工具集（全場景可用）`);
+            }
+        } catch (e) {
+            console.warn(`⚠️ [ToolsetManager] syncInstalledPackageSkills 失敗: ${e.message}`);
+        }
     }
 }
 

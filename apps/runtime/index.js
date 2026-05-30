@@ -82,6 +82,7 @@ const introspection = require('../../src/services/Introspection');
 const ActionQueue = require('../../src/core/ActionQueue'); // ✨ [v9.1] Dual-Queue Architecture
 const PromptShortcutManager = require('../../src/managers/PromptShortcutManager');
 const { normalizeShortcutKey } = PromptShortcutManager;
+const NativeRpgService = require('../../src/services/NativeRpgService');
 
 
 // 🎯 v9.1.5 解耦：不再於啟動時遍歷配置建立 Bot 與實體
@@ -89,6 +90,7 @@ const { normalizeShortcutKey } = PromptShortcutManager;
 let activeTgBot = null;
 let activeDcBot = null;
 let singleGolemInstance = null;
+let restartInProgress = false;
 let promptPoolWatcherTimer = null;
 let lastPromptPoolMtimeMs = Number.NaN;
 let lastTelegramCommandsSignature = '';
@@ -583,6 +585,49 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
     const instance = getOrCreateGolem();
     const { brain, controller, autonomy, convoManager } = instance;
     let matchedPromptShortcut = null;
+    const notifyBrainSystemChange = async (title, details) => {
+        const message = `[System Observation]\n` +
+            `${title}\n` +
+            `${details}\n` +
+            `請將此變更視為最新系統狀態，後續動作請遵循新設定。`;
+        try {
+            if (convoManager && typeof convoManager.enqueue === 'function') {
+                await convoManager.enqueue(ctx, message, {
+                    isPriority: true,
+                    bypassDebounce: true,
+                    isSystemFeedback: true,
+                    allowActions: false,
+                });
+                return;
+            }
+            if (brain && typeof brain.sendMessage === 'function') {
+                await brain.sendMessage(message, false, {
+                    isSystemFeedback: true,
+                    allowActions: false,
+                });
+            }
+        } catch (err) {
+            console.warn(`[SystemSync] Failed to notify brain: ${err.message}`);
+        }
+    };
+
+    if (NativeRpgService.isControlCommand(ctx.text)) {
+        const controlReply = await NativeRpgService.handleControlCommand(ctx, brain);
+        if (controlReply) {
+            if (typeof controlReply === 'string') {
+                await ctx.reply(controlReply, { parse_mode: 'Markdown' });
+            } else {
+                await ctx.reply(controlReply.text || '', controlReply.replyOptions || {});
+            }
+            return;
+        }
+    }
+
+    const rpgTurnResult = await NativeRpgService.handleTurn(ctx, brain);
+    if (rpgTurnResult && rpgTurnResult.handled) {
+        await ctx.reply(rpgTurnResult.text, rpgTurnResult.replyOptions || {});
+        return;
+    }
 
     // ✨ Telegram 快捷指令：送出後自動展開為完整 Prompt 內容
     if (ctx.platform === 'telegram' && ctx.text) {
@@ -640,7 +685,7 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         return;
     }
 
-    if (ctx.isAdmin && ctx.text && ctx.text.trim().toLowerCase() === '/new') {
+    if (ctx.isAdmin && ctx.text && /^\/new$/i.test(ctx.text.trim())) {
         await ctx.reply("🔄 收到 /new 指令！正在為您開啟全新的大腦對話神經元...");
         try {
             const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
@@ -659,19 +704,22 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         return;
     }
 
-    if (ctx.isAdmin && ctx.text && ctx.text.trim().toLowerCase() === '/new_memory') {
+    if (ctx.isAdmin && ctx.text && /^\/(new[_-]?memory|memory[_-]?reset)$/i.test(ctx.text.trim())) {
         await ctx.reply("💥 收到 /new_memory 指令！正在為您物理清空底層 DB 並執行深度轉生...");
         try {
+            let clearResult = null;
             if (brain.memoryDriver && typeof brain.memoryDriver.clearMemory === 'function') {
-                await brain.memoryDriver.clearMemory();
+                clearResult = await brain.memoryDriver.clearMemory();
             }
             const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
             const apiBackendLabel = brain.backend === 'lmstudio' ? 'LM Studio' : 'Ollama';
             if (brain.page || isApiBackend) {
                 await brain.init(true);
+                const clearedCount = (clearResult && Number.isFinite(clearResult.cleared))
+                    ? ` (清除 ${clearResult.cleared} 筆)` : '';
                 await ctx.reply(isApiBackend
-                    ? `✅ 記憶庫 DB 已清空，且 ${apiBackendLabel} 大腦脈絡已重新初始化完成。`
-                    : "✅ 記憶庫 DB 已徹底清空格式化！網頁也已重置，這是一個 100% 空白、無任何歷史包袱的 Golem 實體。");
+                    ? `✅ 記憶庫 DB 已清空${clearedCount}，且 ${apiBackendLabel} 大腦脈絡已重新初始化完成。`
+                    : `✅ 記憶庫 DB 已清空${clearedCount}，網頁也已重置，這是一個 100% 空白、無任何歷史包袱的 Golem 實體。`);
             } else {
                 await ctx.reply("⚠️ 找不到活躍的網頁視窗。");
             }
@@ -681,28 +729,9 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         return;
     }
 
-    // ✨ [新增] /model 指令實作
+    // /model 交由 NodeRouter 單一來源處理，避免與 runtime 文案分叉
     if (ctx.isAdmin && ctx.text && ctx.text.trim().toLowerCase().startsWith('/model')) {
-        const args = ctx.text.trim().split(/\s+/);
-        const targetModel = args[1] ? args[1].toLowerCase() : '';
-
-        // 根據截圖防呆，只允許 fast, thinking, pro
-        if (!['fast', 'thinking', 'pro'].includes(targetModel)) {
-            await ctx.reply("ℹ️ 請輸入正確的模組關鍵字，例如：\n`/model fast` (回答速度快)\n`/model thinking` (具備深度思考)\n`/model pro` (進階程式碼與數學能力)");
-            return;
-        }
-
-        await ctx.reply(`🔄 啟動視覺神經，嘗試為您操作網頁切換至 [${targetModel}] 模式...`);
-        try {
-            if (typeof brain.switchModel === 'function') {
-                const result = await brain.switchModel(targetModel);
-                await ctx.reply(result);
-            } else {
-                await ctx.reply("⚠️ 您的 GolemBrain 尚未掛載 switchModel 功能，請確認檔案是否已更新。");
-            }
-        } catch (e) {
-            await ctx.reply(`❌ 切換模組失敗: ${e.message}`);
-        }
+        if (await NodeRouter.handle(ctx, brain)) return;
         return;
     }
 
@@ -726,20 +755,9 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         return;
     }
 
-    // ✨ [新增] /level 指令實作 (熱切換自主安全等級)
+    // /level 交由 NodeRouter 單一來源處理，避免 runtime 與指令中心不一致
     if (ctx.isAdmin && ctx.text && ctx.text.trim().toLowerCase().startsWith('/level')) {
-        const args = ctx.text.trim().split(/\s+/);
-        const targetLevel = parseInt(args[1], 10);
-        
-        if (isNaN(targetLevel) || targetLevel < 0 || targetLevel > 3) {
-            const lvlName = SecurityManager.LEVELS['L'+SecurityManager.currentLevel] ? SecurityManager.LEVELS['L'+SecurityManager.currentLevel].name : 'Unknown';
-            await ctx.reply(`ℹ️ 目前的安全指令風險等級為：**L${SecurityManager.currentLevel} (${lvlName})**\n\n請輸入 0-3 的數字切換等級，例如：\n\`/level 0\` (最安全，唯讀)\n\`/level 1\` (低風險)\n\`/level 2\` (中風險，預設)\n\`/level 3\` (最高權限)\n\n當指令風險超過目前設定時，將自動受到安全系統攔截。`, { parse_mode: 'Markdown' });
-            return;
-        }
-
-        SecurityManager.currentLevel = targetLevel;
-        const levelInfo = SecurityManager.LEVELS['L'+targetLevel];
-        await ctx.reply(`🛡️ **安全等級已動態切換**\n目前的自主控制權限已調整為：**L${targetLevel} (${levelInfo.name})**\n所有風險等級高於此設定的指令都將遭到自動攔截。`, { parse_mode: 'Markdown' });
+        if (await NodeRouter.handle(ctx, brain)) return;
         return;
     }
 
@@ -773,8 +791,16 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
         const displayName = ctx.instance.username ? `@${ctx.instance.username}` : `[${forceTargetId || 'golem_A'}]`;
         if (isEnable) {
             await ctx.reply(`🤫 ${displayName} 已進入「完全靜默模式」。\n我將暫時關閉感知，且不會記錄任何對話。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `silent_mode=enabled\nobserver_mode=disabled`
+            );
         } else {
             await ctx.reply(`📢 ${displayName} 已解除靜默模式。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `silent_mode=disabled\nobserver_mode=${convoManager.observerMode ? 'enabled' : 'disabled'}`
+            );
         }
         return;
     }
@@ -795,8 +821,16 @@ async function handleUnifiedMessage(ctx, forceTargetId = null) {
 
         if (isEnable) {
             await ctx.reply(`👁️ ${displayName} 已進入「觀察者模式」。\n我會安靜地同步所有對話上下文，但預設不發言。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `observer_mode=enabled\nsilent_mode=${convoManager.silentMode ? 'enabled' : 'disabled'}`
+            );
         } else {
             await ctx.reply(`📢 ${displayName} 已解除觀察者模式。`);
+            await notifyBrainSystemChange(
+                '對話模式已由管理員切換',
+                `observer_mode=disabled\nsilent_mode=${convoManager.silentMode ? 'enabled' : 'disabled'}`
+            );
         }
         return;
     }
@@ -917,6 +951,59 @@ async function handleUnifiedCallback(ctx, actionData) {
         }
     }
 
+    {
+        const instance = getOrCreateGolem();
+        const rpgCallback = await NativeRpgService.handleCallback(ctx, actionData, instance.brain);
+        if (rpgCallback && rpgCallback.handled) {
+            await ctx.reply(rpgCallback.text, rpgCallback.replyOptions || {});
+            return;
+        }
+    }
+
+    if (actionData === 'DRAFTRECOVER_RETRY') {
+        const { convoManager } = getOrCreateGolem();
+        const lastTurn = convoManager && typeof convoManager.getLastUserTurn === 'function'
+            ? convoManager.getLastUserTurn(ctx.chatId)
+            : null;
+        if (!lastTurn || !lastTurn.text) {
+            await ctx.reply('⚠️ 找不到可重試的上一則訊息。請直接輸入新訊息，或按下「/new」重啟對話。', {
+                reply_markup: {
+                    inline_keyboard: [[{ text: '/new', callback_data: 'DRAFTRECOVER_NEW' }]]
+                }
+            });
+            return;
+        }
+        await ctx.reply('🔁 已收到重試，正在重新送出上一則訊息...');
+        await convoManager.enqueue(ctx, lastTurn.text, {
+            attachment: lastTurn.attachment || null,
+            isPriority: true,
+            bypassDebounce: true,
+            draftRecoveryAttempt: 1,
+            disableWebAutoRetry: true
+        });
+        return;
+    }
+
+    if (actionData === 'DRAFTRECOVER_NEW') {
+        const { brain } = getOrCreateGolem();
+        await ctx.reply("🔄 正在執行 /new，嘗試開啟全新的對話...");
+        try {
+            const isApiBackend = brain.backend === 'ollama' || brain.backend === 'lmstudio';
+            const apiBackendLabel = brain.backend === 'lmstudio' ? 'LM Studio' : 'Ollama';
+            if (brain.page || isApiBackend) {
+                await brain.init(true);
+                await ctx.reply(isApiBackend
+                    ? `✅ ${apiBackendLabel} 對話狀態已重置完成。`
+                    : "✅ /new 完成，已開啟全新對話。");
+            } else {
+                await ctx.reply("⚠️ /new 失敗：找不到活躍網頁視窗。請重啟整個 Golem 系統（Restart System）。");
+            }
+        } catch (e) {
+            await ctx.reply(`⚠️ /new 執行失敗：${e.message}\n請重啟整個 Golem 系統（Restart System）。`);
+        }
+        return;
+    }
+
     if (!ctx.isAdmin) return;
 
     // 解析 GolemId (如果是 PATCH 相關)
@@ -960,6 +1047,120 @@ async function handleUnifiedCallback(ctx, actionData) {
             // 重新入隊處理對話
             if (convoManager) {
                 convoManager._actualCommit(task.ctx, task.text, isPriority);
+            }
+            return;
+        }
+
+        if (task.type === 'CORRECTION_APPROVAL') {
+            pendingTasks.delete(taskId);
+            const approvedRetry = action === 'RETRYFIX';
+
+            if (!approvedRetry) {
+                const stopPrompt = `[System Observation]\n` +
+                    `使用者已明確拒絕再次矯正執行。\n` +
+                    `本輪 action 到此停止，請僅用 [GOLEM_REPLY] 向使用者確認已停止，不要再輸出 [GOLEM_ACTION]。`;
+                if (convoManager) {
+                    await convoManager.enqueue(task.ctx || ctx, stopPrompt, {
+                        isPriority: true,
+                        bypassDebounce: true,
+                        isSystemFeedback: true,
+                        allowActions: false,
+                    });
+                }
+                await ctx.reply('🛑 已停止本輪 action，不再要求 Golem 繼續矯正。');
+                return;
+            }
+
+            await ctx.reply('✅ 已批准再次矯正，我現在要求 Golem 重寫修正指令並重試。');
+            if (convoManager) {
+                await convoManager.enqueue(task.ctx || ctx, task.feedbackPrompt, {
+                    isPriority: true,
+                    bypassDebounce: true,
+                    isSystemFeedback: true,
+                    allowActions: true,
+                    correctionAttempt: Number(task.nextCorrectionAttempt || 1),
+                    actionDepth: Number(task.actionDepth || 1),
+                    maxActionDepth: Number(task.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                });
+            } else if (brain && typeof brain.sendMessage === 'function') {
+                const finalResponse = await brain.sendMessage(task.feedbackPrompt, false, {
+                    isSystemFeedback: true,
+                    allowActions: true,
+                    correctionAttempt: Number(task.nextCorrectionAttempt || 1),
+                    actionDepth: Number(task.actionDepth || 1),
+                    maxActionDepth: Number(task.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                });
+                await NeuroShunter.dispatch(task.ctx || ctx, finalResponse, brain, controller, {
+                    isSystemFeedback: true,
+                    allowActions: true,
+                    correctionAttempt: Number(task.nextCorrectionAttempt || 1),
+                    actionDepth: Number(task.actionDepth || 1),
+                    maxActionDepth: Number(task.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                });
+            }
+            return;
+        }
+
+        if (task.type === 'OBSERVATION_ACTION_APPROVAL') {
+            pendingTasks.delete(taskId);
+            const approvedRetry = action === 'RETRYOBS';
+
+            if (!approvedRetry) {
+                const stopPrompt = `[System Observation]\n` +
+                    `使用者已拒絕再次執行 observation 階段的候選 action。\n` +
+                    `本輪 action 到此停止，請僅用 [GOLEM_REPLY] 向使用者確認已停止，不要再輸出 [GOLEM_ACTION]。`;
+                if (convoManager) {
+                    await convoManager.enqueue(task.ctx || ctx, stopPrompt, {
+                        isPriority: true,
+                        bypassDebounce: true,
+                        isSystemFeedback: true,
+                        allowActions: false,
+                    });
+                }
+                await ctx.reply('🛑 已停止本輪 action，不再執行該份矯正指令。');
+                return;
+            }
+
+            const actionPayload = Array.isArray(task.proposedActions)
+                ? task.proposedActions
+                : [];
+            const correctionExamples = [
+                '{"action":"collab-calendar","args":{"action":"add","title":"倒垃圾 (8點前需完成)","start":"2026-05-17T07:30:00+08:00","end":"2026-05-17T08:00:00+08:00","description":"明早八點前完成","reminderMinutes":10}}',
+                '{"action":"mcp_call","server":"chrome-devtools","tool":"navigate_page","parameters":{"url":"https://example.com","timeout":60000}}',
+                '{"action":"command","parameter":"ls -la"}'
+            ].join('\n');
+            const retryPrompt = `[System Observation]\n` +
+                `使用者已批准再次嘗試。請你先重寫一個正確的 [GOLEM_ACTION]，再執行。\n` +
+                `\n[PREVIOUS_INVALID_ACTIONS]\n` +
+                `${JSON.stringify(actionPayload, null, 2)}\n` +
+                `\n要求：\n` +
+                `- 不要沿用錯誤欄位（例如 parameters.command=insert）。\n` +
+                `- 只輸出一個最小必要 action。\n` +
+                `- 請參考以下正確範例：\n${correctionExamples}\n`;
+            await ctx.reply('✅ 已批准，我現在要求 Golem 依範例重寫正確指令後再執行。');
+
+            if (convoManager) {
+                await convoManager.enqueue(task.ctx || ctx, retryPrompt, {
+                    isPriority: true,
+                    bypassDebounce: true,
+                    isSystemFeedback: true,
+                    allowActions: true,
+                    actionDepth: Number(task.actionDepth || 0) + 1,
+                    maxActionDepth: Number(task.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                });
+            } else if (brain && typeof brain.sendMessage === 'function') {
+                const finalResponse = await brain.sendMessage(retryPrompt, false, {
+                    isSystemFeedback: true,
+                    allowActions: true,
+                    actionDepth: Number(task.actionDepth || 0) + 1,
+                    maxActionDepth: Number(task.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                });
+                await NeuroShunter.dispatch(task.ctx || ctx, finalResponse, brain, controller, {
+                    isSystemFeedback: true,
+                    allowActions: true,
+                    actionDepth: Number(task.actionDepth || 0) + 1,
+                    maxActionDepth: Number(task.maxActionDepth || process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                });
             }
             return;
         }
@@ -1067,7 +1268,7 @@ async function handleUnifiedCallback(ctx, actionData) {
 
                 let remainingResult = "";
                 try {
-                    remainingResult = await controller.runSequence(ctx, steps, nextIndex + 1) || "";
+                    remainingResult = await controller.runSequence(ctx, steps, nextIndex + 1, brain) || "";
                 } catch (err) {
                     console.warn(`⚠️ [System] 執行後續步驟時發生警告: ${err.message}`);
                 }
@@ -1077,14 +1278,80 @@ async function handleUnifiedCallback(ctx, actionData) {
                 if (observation) {
                     await ctx.reply(`📤 指令執行完畢 (共抓取 ${finalOutput.length} 字元)！將結果放入對話隊列 (Dialogue Queue) 等待大腦分析...`);
 
-                    const feedbackPrompt = `[System Observation]\nUser approved actions.\nExecution Result:\n${observation}\n\nPlease analyze this result and report to the user using [GOLEM_REPLY].`;
+                    const failedBlocks = observation
+                        .split('\n\n----------------\n\n')
+                        .filter((block) => block.includes('[Step') && block.includes(' Failed]'));
+                    const currentCorrectionAttempt = Number(task.correctionAttempt || 0);
+                    const maxAutoCorrectionAttempts = Number(process.env.GOLEM_MAX_AUTO_CORRECTION_ATTEMPTS || 1);
+                    const shouldAutoCorrect = failedBlocks.length > 0 && currentCorrectionAttempt < maxAutoCorrectionAttempts;
+                    const needsUserRetryApproval = failedBlocks.length > 0 && !shouldAutoCorrect;
+                    const correctionExamples = [
+                        '{"action":"command","parameter":"ls -la"}',
+                        '{"action":"mcp_call","server":"chrome-devtools","tool":"navigate_page","parameters":{"url":"https://example.com","timeout":60000}}',
+                        '{"action":"collab-calendar","args":{"action":"add","title":"驗車","start":"2026-05-23T08:00:00+08:00","end":"2026-05-23T10:30:00+08:00"}}'
+                    ].join('\n');
+
+                    if (needsUserRetryApproval) {
+                        const retryApprovalId = uuidv4();
+                        pendingTasks.set(retryApprovalId, {
+                            type: 'CORRECTION_APPROVAL',
+                            ctx,
+                            timestamp: Date.now(),
+                            feedbackPrompt: `[System Observation]\n` +
+                                `使用者已批准再次矯正執行。請根據下列錯誤，重新輸出一個修正後的 [GOLEM_ACTION]。\n\n` +
+                                `修正規則：\n` +
+                                `- 僅輸出一個 action。\n` +
+                                `- 必須使用有效 action 名稱（command / mcp_call / 已安裝技能）。\n` +
+                                `- mcp_call 必須包含 server + tool。\n` +
+                                `- 若是 collab-calendar，請使用 {"action":"collab-calendar","args":{"action":"add",...}}。\n\n` +
+                                `可用範例：\n${correctionExamples}\n\n` +
+                                `錯誤結果：\n${observation}`,
+                            actionDepth: 1,
+                            maxActionDepth: Number(process.env.GOLEM_MAX_AUTO_TURNS || 5),
+                            nextCorrectionAttempt: currentCorrectionAttempt + 1,
+                        });
+                        await ctx.reply(
+                            `⚠️ 指令已連續矯正失敗 ${currentCorrectionAttempt + 1} 次。\n是否要我要求 Golem 再次修正後重試？`,
+                            {
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        { text: '✅ 是，要求再矯正一次', callback_data: `RETRYFIX_${retryApprovalId}` },
+                                        { text: '🛑 否，停止本輪 action', callback_data: `STOPFIX_${retryApprovalId}` }
+                                    ]]
+                                }
+                            }
+                        );
+                        return;
+                    }
+
+                    const feedbackPrompt = shouldAutoCorrect
+                        ? `[System Observation]\n` +
+                        `上一輪指令執行失敗，請你立即修正並重新輸出 [GOLEM_ACTION]。\n\n` +
+                        `修正規則：\n` +
+                        `- 只輸出一個最小必要的修正 action。\n` +
+                        `- 優先修正 action 名稱、server/tool、必要參數。\n` +
+                        `- 若使用 command，避免高風險串接語法。\n` +
+                        `- 失敗重點：\n${failedBlocks.join('\n\n---\n\n')}\n\n` +
+                        `可用範例：\n${correctionExamples}\n\n` +
+                        `原始結果：\n${observation}`
+                        : `[System Observation]\nUser approved actions.\nExecution Result:\n${observation}\n\nPlease analyze this result and report to the user using [GOLEM_REPLY].`;
                     try {
                         // ✨ [v9.1] 產線串接：將加工完成的 Observation 放入對話產線 (Dialogue Queue) 取代直接呼叫 sendMessage
                         if (convoManager) {
-                            await convoManager.enqueue(ctx, feedbackPrompt, { isPriority: true, bypassDebounce: true });
+                            await convoManager.enqueue(ctx, feedbackPrompt, {
+                                isPriority: true,
+                                bypassDebounce: true,
+                                isSystemFeedback: true,
+                                allowActions: shouldAutoCorrect,
+                                correctionAttempt: shouldAutoCorrect ? (currentCorrectionAttempt + 1) : currentCorrectionAttempt,
+                            });
                         } else {
                             // 防呆：如果退化回沒有 convoManager，則走舊路
-                            const finalResponse = await brain.sendMessage(feedbackPrompt);
+                            const finalResponse = await brain.sendMessage(feedbackPrompt, false, {
+                                isSystemFeedback: true,
+                                allowActions: shouldAutoCorrect,
+                                correctionAttempt: shouldAutoCorrect ? (currentCorrectionAttempt + 1) : currentCorrectionAttempt,
+                            });
                             await NeuroShunter.dispatch(ctx, finalResponse, brain, controller);
                         }
                     } catch (err) {
@@ -1199,17 +1466,36 @@ global.stopGolem = async function (id) {
 };
 
 global.gracefulRestart = async function () {
+    if (restartInProgress) {
+        console.warn('⚠️ [System] gracefulRestart already in progress, ignoring duplicate request.');
+        return;
+    }
+    restartInProgress = true;
+
     await performCleanup();
 
-    // 3. 生成子程序並安全退出
+    // 3. 生成子程序並安全退出（若已有外部程序管理，交給外部重啟）
     const { spawn } = require('child_process');
     const env = Object.assign({}, process.env, { SKIP_BROWSER: '1' });
-    const subprocess = spawn(process.argv[0], process.argv.slice(1), {
-        detached: true,
-        stdio: 'ignore',
-        env: env
-    });
-    subprocess.unref();
+    const isManagedBySupervisor = Boolean(
+        process.env.pm_id ||
+        process.env.PM2_HOME ||
+        process.env.npm_config_user_agent?.toLowerCase().includes('nodemon') ||
+        process.env.__daemon
+    );
+
+    if (!isManagedBySupervisor) {
+        const subprocess = spawn(process.argv[0], process.argv.slice(1), {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true,
+            env: env
+        });
+        subprocess.unref();
+    } else {
+        console.log('ℹ️ [System] External supervisor detected, skipping self-spawn and exiting for supervisor restart.');
+    }
+
     process.exit(0);
 };
 

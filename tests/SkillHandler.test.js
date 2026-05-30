@@ -48,10 +48,11 @@ describe('SkillHandler', () => {
             brain: mockBrain,
             args: mockAct
         }));
-        expect(mockCtx.reply).toHaveBeenCalledWith(expect.stringContaining('Skill success'));
+        expect(mockCtx.reply).toHaveBeenCalledWith(expect.stringContaining('技能「TestSkill」已完成'));
+        expect(mockCtx.reply).not.toHaveBeenCalledWith(expect.stringContaining('Skill success'));
     });
 
-    test('execute should truncate long results', async () => {
+    test('execute should not expose long skill results to the user', async () => {
         const longResult = 'A'.repeat(4000);
         const mockSkill = {
             name: 'TestSkill',
@@ -60,8 +61,9 @@ describe('SkillHandler', () => {
         SkillManager.getSkill.mockReturnValue(mockSkill);
 
         await SkillHandler.execute(mockCtx, mockAct, mockBrain);
-        
-        expect(mockCtx.reply).toHaveBeenCalledWith(expect.stringContaining('...(已截斷)'));
+
+        expect(mockCtx.reply).toHaveBeenCalledWith(expect.stringContaining('技能「TestSkill」已完成'));
+        expect(mockCtx.reply).not.toHaveBeenCalledWith(expect.stringContaining('...(已截斷)'));
         const lastReplyArg = mockCtx.reply.mock.calls[1][0];
         expect(lastReplyArg.length).toBeLessThan(4000);
     });

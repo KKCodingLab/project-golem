@@ -6,7 +6,7 @@ const path = require('path');
  * 負責將記憶摘要寫入信號檔，並觸發系統重啟。
  */
 async function run(ctx) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     const summary = args.summary || args.args || "";
 
     if (!summary || summary.trim() === '') {

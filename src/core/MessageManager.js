@@ -1,5 +1,52 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
+function escapeTelegramHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function escapeTelegramHtmlAttr(value) {
+    return escapeTelegramHtml(value).replace(/"/g, '&quot;');
+}
+
+function convertMarkdownLinksToTelegramHtml(text) {
+    const source = String(text || '');
+    const linkRegex = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+    let cursor = 0;
+    let converted = '';
+    let found = false;
+
+    for (const match of source.matchAll(linkRegex)) {
+        const index = match.index || 0;
+        const title = match[1];
+        const url = match[2];
+        converted += escapeTelegramHtml(source.slice(cursor, index));
+        converted += `<a href="${escapeTelegramHtmlAttr(url)}">${escapeTelegramHtml(title)}</a>`;
+        cursor = index + match[0].length;
+        found = true;
+    }
+
+    if (!found) return source;
+    converted += escapeTelegramHtml(source.slice(cursor));
+    return converted;
+}
+
+function prepareTelegramMessage(chunk, options = {}) {
+    if (!options || !options._telegramHtmlLinks) {
+        return { chunk, options };
+    }
+
+    const sendOptions = { ...options };
+    delete sendOptions._telegramHtmlLinks;
+    sendOptions.parse_mode = 'HTML';
+    return {
+        chunk: convertMarkdownLinksToTelegramHtml(chunk),
+        options: sendOptions,
+    };
+}
+
 // ============================================================
 // 📨 Message Manager (雙模版訊息切片器)
 // ============================================================
@@ -49,30 +96,42 @@ class MessageManager {
 
             try {
                 if (ctx.platform === 'telegram') {
+                    const prepared = prepareTelegramMessage(chunk, options);
                     // Telegram 處理附件 (僅在最後一個 Chunk 發送)
-                    if (isLastChunk && options.attachments && options.attachments.length > 0) {
-                        for (const att of options.attachments) {
+                    if (isLastChunk && prepared.options.attachments && prepared.options.attachments.length > 0) {
+                        for (const att of prepared.options.attachments) {
                             const isImage = att.mimeType?.startsWith('image');
                             const isSvg = att.mimeType?.includes('svg') || (att.path && att.path.toLowerCase().endsWith('.svg')) || (att.url && att.url.toLowerCase().endsWith('.svg'));
                             
                             // Telegram 的 sendPhoto 不支援 SVG 等向量格式，必須退回使用 sendDocument
                             if (isImage && !isSvg) {
-                                await ctx.instance.sendPhoto(ctx.chatId, att.path || att.url, options);
+                                await ctx.instance.sendPhoto(ctx.chatId, att.path || att.url, prepared.options);
                             } else {
-                                await ctx.instance.sendDocument(ctx.chatId, att.path || att.url, options);
+                                await ctx.instance.sendDocument(ctx.chatId, att.path || att.url, prepared.options);
                             }
                         }
                     }
-                    await ctx.instance.sendMessage(ctx.chatId, chunk, options);
+                    await ctx.instance.sendMessage(ctx.chatId, prepared.chunk, prepared.options);
                 } else if (ctx.platform === 'discord') {
                     const channel = await ctx.instance.channels.fetch(ctx.chatId);
                     const dcOptions = { content: chunk };
                     if (options.reply_markup && options.reply_markup.inline_keyboard) {
-                        const row = new ActionRowBuilder();
-                        options.reply_markup.inline_keyboard[0].forEach(btn => {
-                            row.addComponents(new ButtonBuilder().setCustomId(btn.callback_data).setLabel(btn.text).setStyle(ButtonStyle.Primary));
-                        });
-                        dcOptions.components = [row];
+                        const rows = options.reply_markup.inline_keyboard
+                            .filter((row) => Array.isArray(row) && row.length > 0)
+                            .slice(0, 5)
+                            .map((row) => {
+                                const actionRow = new ActionRowBuilder();
+                                row.slice(0, 5).forEach((btn) => {
+                                    actionRow.addComponents(
+                                        new ButtonBuilder()
+                                            .setCustomId(String(btn.callback_data || 'RPG_STATUS'))
+                                            .setLabel(String(btn.text || '選項'))
+                                            .setStyle(ButtonStyle.Primary)
+                                    );
+                                });
+                                return actionRow;
+                            });
+                        if (rows.length > 0) dcOptions.components = rows;
                     }
                     
                     // Discord 處理附件 (併入最後一個 Chunk)
@@ -88,3 +147,7 @@ class MessageManager {
 }
 
 module.exports = MessageManager;
+module.exports._private = {
+    convertMarkdownLinksToTelegramHtml,
+    prepareTelegramMessage,
+};

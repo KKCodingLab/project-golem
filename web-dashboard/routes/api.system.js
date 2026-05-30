@@ -8,6 +8,7 @@ const { resolveEnabledSkills } = require('../../src/skills/skillsConfig');
 const OllamaClient = require('../../src/services/OllamaClient');
 const LMStudioClient = require('../../src/services/LMStudioClient');
 const { buildOperationGuard, auditSecurityEvent } = require('../server/security');
+const { buildBackupPayload, previewRestoreBackupPayload, restoreBackupPayload } = require('../../src/services/SystemBackupService');
 
 function normalizeMemoryMode(modeRaw) {
     const mode = String(modeRaw || '').trim().toLowerCase();
@@ -47,11 +48,13 @@ function parsePositiveInt(value, fallback) {
 
 module.exports = function registerSystemRoutes(server) {
     const router = express.Router();
+    let restartRequestInFlight = false;
     const requireUpdateExecute = buildOperationGuard(server, 'system_update_execute');
     const requireSystemConfigUpdate = buildOperationGuard(server, 'system_config_update');
     const requireRestart = buildOperationGuard(server, 'system_restart');
     const requireReload = buildOperationGuard(server, 'system_reload');
     const requireShutdown = buildOperationGuard(server, 'system_shutdown');
+    const requireSystemBackup = buildOperationGuard(server, 'system_config_update');
 
     router.get('/api/system/status', (req, res) => {
         try {
@@ -455,6 +458,68 @@ module.exports = function registerSystemRoutes(server) {
         }
     });
 
+    router.get('/api/system/backup/export', requireSystemBackup, async (req, res) => {
+        try {
+            const EnvManager = require('../../src/utils/EnvManager');
+            const ConfigManager = require('../../src/config/index');
+            const envVars = EnvManager.readEnv();
+            let appVersion = 'unknown';
+            try {
+                const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'));
+                appVersion = pkg.version || 'unknown';
+            } catch { }
+
+            const payload = buildBackupPayload({
+                appVersion,
+                memoryBaseDir: path.resolve(ConfigManager.MEMORY_BASE_DIR),
+                repoRoot: process.cwd(),
+                envSnapshot: envVars
+            });
+
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `golem-backup-${stamp}.json`;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            return res.send(JSON.stringify(payload, null, 2));
+        } catch (e) {
+            console.error('[WebServer] Failed to export system backup:', e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    router.post('/api/system/backup/restore', requireSystemBackup, async (req, res) => {
+        try {
+            const ConfigManager = require('../../src/config/index');
+            const payload = req.body?.payload || req.body;
+            const summary = restoreBackupPayload(payload, {
+                memoryBaseDir: path.resolve(ConfigManager.MEMORY_BASE_DIR),
+                repoRoot: process.cwd()
+            });
+            return res.json({
+                success: true,
+                message: 'Backup restore completed.',
+                summary
+            });
+        } catch (e) {
+            console.error('[WebServer] Failed to restore system backup:', e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    router.post('/api/system/backup/restore/preview', requireSystemBackup, async (req, res) => {
+        try {
+            const payload = req.body?.payload || req.body;
+            const preview = previewRestoreBackupPayload(payload);
+            return res.json({
+                success: true,
+                preview
+            });
+        } catch (e) {
+            console.error('[WebServer] Failed to preview system backup restore:', e);
+            return res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
     router.post('/api/system/update/execute', requireUpdateExecute, async (req, res) => {
         try {
             const { keepOldData = true, keepMemory = true } = req.body;
@@ -471,6 +536,14 @@ module.exports = function registerSystemRoutes(server) {
 
     router.post('/api/system/restart', requireRestart, (req, res) => {
         try {
+            if (restartRequestInFlight) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'restart_in_progress',
+                    message: 'Restart already in progress. Please wait.'
+                });
+            }
+            restartRequestInFlight = true;
             console.log('🔄 [System] Restart requested by user. Triggering hard restart...');
             res.json({ success: true, message: 'Restarting system... Full re-initialization in progress.' });
 
@@ -478,17 +551,28 @@ module.exports = function registerSystemRoutes(server) {
                 setTimeout(() => {
                     global.gracefulRestart().catch((err) => {
                         console.error('❌ [System] Restart error:', err);
+                        restartRequestInFlight = false;
                     });
                 }, 1000);
             } else {
                 console.warn('⚠️ [System] global.gracefulRestart not found, skipping forced process exit');
+                restartRequestInFlight = false;
             }
         } catch (e) {
+            restartRequestInFlight = false;
             return res.status(500).json({ error: e.message });
         }
     });
 
     router.post('/api/system/reload', requireReload, (req, res) => {
+        if (restartRequestInFlight) {
+            return res.status(409).json({
+                success: false,
+                error: 'restart_in_progress',
+                message: 'Restart already in progress. Please wait.'
+            });
+        }
+        restartRequestInFlight = true;
         console.log('🔄 [WebServer] Received reload request. Restarting system...');
         res.json({ success: true, message: 'System is restarting with full re-initialization...' });
 
@@ -496,10 +580,12 @@ module.exports = function registerSystemRoutes(server) {
             setTimeout(() => {
                 global.gracefulRestart().catch((err) => {
                     console.error('❌ [System] Reload error:', err);
+                    restartRequestInFlight = false;
                 });
             }, 1000);
         } else {
             console.warn('⚠️ [System] global.gracefulRestart not found, skipping forced process exit');
+            restartRequestInFlight = false;
         }
     });
 
@@ -507,15 +593,32 @@ module.exports = function registerSystemRoutes(server) {
         console.log('⛔ [WebServer] Received shutdown request. Stopping system...');
         res.json({ success: true, message: 'System is shutting down... Please restart manually if needed.' });
 
-        if (typeof global.fullShutdown === 'function') {
-            setTimeout(() => {
+        setTimeout(async () => {
+            const contextIds = Array.from(server.contexts.keys());
+            if (typeof global.stopGolem === 'function' && contextIds.length > 0) {
+                console.log(`🧹 [System] Pre-shutdown stop for ${contextIds.length} context(s)...`);
+                for (const id of contextIds) {
+                    try {
+                        await global.stopGolem(id);
+                        if (typeof server.removeContext === 'function') {
+                            server.removeContext(id);
+                        } else {
+                            server.contexts.delete(id);
+                        }
+                    } catch (stopErr) {
+                        console.warn(`⚠️ [System] Failed to stop golem ${id} before shutdown: ${stopErr.message}`);
+                    }
+                }
+            }
+
+            if (typeof global.fullShutdown === 'function') {
                 global.fullShutdown().catch((err) => {
                     console.error('❌ [System] Shutdown error:', err);
                 });
-            }, 1000);
-        } else {
-            console.warn('⚠️ [System] global.fullShutdown not found, skipping forced process exit');
-        }
+            } else {
+                console.warn('⚠️ [System] global.fullShutdown not found, skipping forced process exit');
+            }
+        }, 1000);
     });
 
     router.get('/api/system/security/events', (req, res) => {

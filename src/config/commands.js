@@ -14,10 +14,10 @@ module.exports = [
     { command: '/new_memory', description: '徹底轉生：物理清空底層資料庫 (DB) 並重置對話，完全忘記過去細節。' },
     {
         command: '/model', 
-        description: '模型切換：切換 Gemini 的大腦模型 (fast/thinking/pro)。',
+        description: '模型切換：切換 Gemini 的大腦模型 (flash-lite/flash/pro，兼容 fast/thinking)。',
         options: [
-            { name: 'fast', description: '回答速度快 (效能優先)' },
-            { name: 'thinking', description: '具備深度思考 (邏輯優先)' },
+            { name: 'flash-lite', description: '快速回應 (速度優先)' },
+            { name: 'flash', description: '平衡思考 (綜合優先)' },
             { name: 'pro', description: '進階程式碼與數學能力 (專業優先)' }
         ]
     },
@@ -50,6 +50,21 @@ module.exports = [
             { name: '建立一個資料清理技能', description: '範例：學習清洗與格式化輸入資料' }
         ]
     },
+    {
+        command: '/install',
+        description: '安裝本機技能或 MCP 工具，並自動同步 capability/example/vector 索引。',
+        options: [
+            { name: 'skill <path>', description: '由本機技能資料夾安裝（需包含 manifest.json）' },
+            { name: 'skill-gh <url>', description: '由 GitHub repo/tree URL 安裝技能' },
+            { name: 'mcp-file <path>', description: '由本機 MCP JSON 設定檔安裝/更新' },
+            { name: 'mcp-json <json>', description: '貼上單行 JSON 安裝/更新 MCP 設定' },
+            { name: 'mcp-url <url>', description: '由 HTTPS JSON URL 安裝/更新 MCP 設定' },
+            { name: 'list', description: '列出目前已安裝的 skill/mcp 與主要資訊' },
+            { name: 'search <keyword>', description: '搜尋已安裝項目（id/name/source）' },
+            { name: 'update <skill|mcp> <id>', description: '依來源資訊重新安裝更新（github/url/file/json/path）' },
+            { name: 'remove <skill|mcp> <id>', description: '移除已安裝 skill 或 mcp 設定' }
+        ]
+    },
     { command: '/donate', description: '顯示贊助連結，支持 Project Golem 持續開發。' },
     { command: '/support', description: '顯示贊助連結，等同於 /donate。' },
     { command: '/update', description: '觸發系統更新確認流程，會要求管理員確認後才執行。' },
@@ -70,6 +85,13 @@ module.exports = [
         ]
     },
     { command: '/compress', description: '手動壓縮目前會話記憶，節省長對話上下文空間。' },
+    {
+        command: '/refine',
+        description: '產生半自動能力補強計劃（缺口分析 + 優先任務 + 驗證步驟，不直接改碼）。',
+        options: [
+            { name: '<目標描述>', description: '例如：/refine 強化股票分析與日曆協作的工具穩定性' }
+        ]
+    },
     {
         command: '/project',
         description: '讀取專案資料夾並分段注入上下文，可掃描、注入或執行專案分析任務。',
@@ -124,16 +146,28 @@ module.exports = [
     { command: '/stock', description: '股市分析指令別名，等同於 /stocks。' },
     { command: '/stockboard', description: '開啟股市看板式分析上下文，等同於 /stocks。' },
     { command: '/stock-dashboard', description: '開啟股市 dashboard 分析上下文，等同於 /stocks。' },
+    {
+        command: '/rpg',
+        description: 'Golem 原生文字 RPG 模式控制（啟動/關閉/狀態/會員等級）。',
+        options: [
+            { name: 'start', description: '啟動目前聊天室的 RPG 模式' },
+            { name: 'stop', description: '關閉目前聊天室的 RPG 模式' },
+            { name: 'status', description: '查看 RPG 狀態與你的會員回合數' },
+            { name: 'bind', description: '產生手機綁定碼，將 Telegram/Discord 會員等級連動到 Dashboard 帳號' },
+            { name: 'tier <userId> <tier>', description: '管理員設定會員等級（visitor/general/sponsor）' }
+        ]
+    },
     { command: '/patch', description: '執行自我反思與代碼優化。' },
     { command: '/dashboard', description: '顯示控制台連線網址：包含本地 (Local) 與遠端 (Remote) 存取網址。' },
-    { 
-        command: '/level', 
-        description: '熱切換安全自主等級 (0-3)。',
+    {
+        command: '/level',
+        description: '切換自動化安全等級（0-4，與 Dashboard 安全與指令同步）。',
         options: [
-            { name: '0', description: 'Level 0 (最安全，唯讀)' },
-            { name: '1', description: 'Level 1 (低風險)' },
-            { name: '2', description: 'Level 2 (中風險，預設)' },
-            { name: '3', description: 'Level 3 (最高權限)' }
+            { name: '0', description: 'Lockdown：最保守（只允許最低風險）' },
+            { name: '1', description: 'Guided：保守確認' },
+            { name: '2', description: 'Balanced：平衡模式（推薦）' },
+            { name: '3', description: 'Autopilot：高自動化' },
+            { name: '4', description: 'Silent：最高自動化且隱藏中間訊息' }
         ]
     },
     { command: '/@Gmail', description: '讀取、搜尋您的個人電子郵件。' },

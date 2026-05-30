@@ -7,7 +7,7 @@ import { socket } from "@/lib/socket";
 interface LogMessage {
     time: string;
     msg: string;
-    type: 'general' | 'chronos' | 'queue' | 'agent' | 'error' | 'memory';
+    type: 'general' | 'chronos' | 'queue' | 'agent' | 'error' | 'memory' | 'action_gate';
     raw?: string;
 }
 
@@ -78,6 +78,7 @@ export function LogStream({
             case 'chronos': return 'text-muted-foreground italic';
             case 'queue': return 'text-primary/70';
             case 'memory': return 'text-muted-foreground';
+            case 'action_gate': return 'text-amber-300';
             default: return 'text-foreground';
         }
     };

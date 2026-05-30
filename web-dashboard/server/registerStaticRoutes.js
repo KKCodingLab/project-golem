@@ -124,6 +124,7 @@ module.exports = function registerStaticRoutes(server) {
         '/dashboard/chat',
         '/dashboard/diary',
         '/dashboard/memory',
+        '/dashboard/memory-firewall',
         '/dashboard/office',
         '/dashboard/mcp',
         '/dashboard/persona',
@@ -133,6 +134,8 @@ module.exports = function registerStaticRoutes(server) {
         '/dashboard/setup',
         '/dashboard/skills',
         '/dashboard/stocks',
+        '/dashboard/calendar',
+        '/dashboard/action-gate',
         '/dashboard/system-setup'
     ];
 

@@ -35,6 +35,12 @@ describe('PageInteractor Improvements', () => {
     test('_typeInput should focus and simulate keyboard events', async () => {
         const selector = 'textarea';
         const text = 'hello world';
+        mockPage.evaluate = jest.fn().mockResolvedValue({
+            ok: true,
+            method: 'native-value',
+            tagName: 'TEXTAREA',
+            length: text.length,
+        });
         
         // Internal methods are private, so we'll test via the public interact method or access them directly via prototype if needed.
         // For simplicity in this mock test, we'll check the calls made during _typeInput logic.
@@ -49,6 +55,7 @@ describe('PageInteractor Improvements', () => {
 
     test('_clickSend should use Enter and click with ARIA labels', async () => {
         const selector = '.send-button';
+        interactor._waitForSendAccepted = jest.fn().mockResolvedValue(true);
         
         await interactor._clickSend(selector);
 

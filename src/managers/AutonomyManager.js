@@ -74,7 +74,6 @@ class AutonomyManager {
         try {
             const logManager = this.brain.chatLogManager;
             if (!logManager) return;
-            const logDir = logManager.dirs.hourly;
 
             const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
             const yesterday = logManager._getYesterdayDateString();
@@ -95,15 +94,14 @@ class AutonomyManager {
             for (const config of checkConfigs) {
                 const { date, threshold, label } = config;
 
-                // 掃描指定日期的每小時日誌
-                const files = fs.readdirSync(logDir)
-                    .filter(f => f.startsWith(date) && f.length === 14 && f.endsWith('.log'));
+                // 以 SQLite 訊息筆數作為門檻依據（取代舊版 .log 檔案數）
+                const messageCount = await logManager.countMessagesByDate(date);
 
-                if (files.length >= threshold) {
-                    console.log(`📦 [Autonomy] 門檻達成：${date} (${label}) 已累積 ${files.length} 個時段日誌，啟動自動歸檔程序...`);
+                if (messageCount >= threshold) {
+                    console.log(`📦 [Autonomy] 門檻達成：${date} (${label}) 已累積 ${messageCount} 筆對話，啟動自動歸檔程序...`);
 
                     if (ConfigManager.CONFIG.ENABLE_LOG_NOTIFICATIONS) {
-                        await this.sendNotification(`📦 **【自動化日誌維護】**\n偵測到${label} (${date}) 已累積達 ${files.length} 小時對話，目前將進行記憶彙整，請稍等...`);
+                        await this.sendNotification(`📦 **【自動化日誌維護】**\n偵測到${label} (${date}) 已累積達 ${messageCount} 筆對話，目前將進行記憶彙整，請稍等...`);
                     }
 
                     const logArchiveSkill = require('../skills/modules/log-archive/index.js');
@@ -117,7 +115,7 @@ class AutonomyManager {
                     }
                     didArchive = true;
                 } else {
-                    console.log(`ℹ️ [Autonomy] ${date} (${label}) 目前累積 ${files.length}/${threshold} 份日誌，未達壓縮門檻。`);
+                    console.log(`ℹ️ [Autonomy] ${date} (${label}) 目前累積 ${messageCount}/${threshold} 筆對話，未達壓縮門檻。`);
                 }
             }
 
@@ -217,6 +215,40 @@ class AutonomyManager {
                     await this.convoManager.enqueue(adminCtx, prompt, { isPriority: true, bypassDebounce: true });
                 }
             }
+        }
+
+        // ── 📅 協作日曆提醒 ──────────────────────────────────────────────────
+        try {
+            const CalendarCollabService = require('../services/CalendarCollabService');
+            const dueReminders = CalendarCollabService.checkDueReminders();
+            if (dueReminders.length > 0) {
+                console.log(`📅 [TimeWatcher] 發現 ${dueReminders.length} 個日曆提醒！`);
+                for (const { event, triggerType } of dueReminders) {
+                    const adminCtx = await this.getAdminContext();
+                    const startStr = new Date(event.start).toLocaleString('zh-TW', {
+                        timeZone: 'Asia/Taipei', hour12: false,
+                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+                    const ownerLabel = event.owner === 'golem' ? '你自己的' : '使用者的';
+
+                    let prompt;
+                    if (triggerType === 'start') {
+                        prompt = `【📅 行程開始提醒】\n${ownerLabel}行程「${event.title}」現在開始了！\n時間：${startStr}${event.location ? `\n地點：${event.location}` : ''}${event.description ? `\n備註：${event.description}` : ''}\n\n請主動通知使用者，語氣自然友善。若這是你自己的任務，請開始執行。`;
+                    } else {
+                        prompt = `【📅 行程即將開始】\n${ownerLabel}行程「${event.title}」將在 ${event.reminderMinutes} 分鐘後開始。\n時間：${startStr}${event.location ? `\n地點：${event.location}` : ''}${event.description ? `\n備註：${event.description}` : ''}\n\n請主動提醒使用者，語氣自然友善。`;
+                    }
+
+                    if (this.convoManager) {
+                        await this.convoManager.enqueue(adminCtx, prompt, {
+                            isPriority: true,
+                            bypassDebounce: true,
+                            isSystemFeedback: false,
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('❌ [TimeWatcher] 日曆提醒掃描失敗:', e.message);
         }
     }
 

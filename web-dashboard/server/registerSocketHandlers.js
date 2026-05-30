@@ -20,6 +20,8 @@ module.exports = function registerSocketHandlers(server) {
             agentWorkerIdleTimeouts: dashboardState.agentWorkerIdleTimeouts || 0,
             agentWorkerDraftPendingChecks: dashboardState.agentWorkerDraftPendingChecks || 0,
             lastAgentWorkerEvent: dashboardState.lastAgentWorkerEvent || 'N/A',
+            actionGateRejections: dashboardState.actionGateRejections || 0,
+            lastActionGateReject: dashboardState.lastActionGateReject || 'N/A',
             uptime: process.uptime(),
             logs: server.logBuffer,
             golems: getGolemsData()

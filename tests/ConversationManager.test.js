@@ -94,4 +94,45 @@ describe('ConversationManager', () => {
         );
         expect(mockShunter.dispatch).toHaveBeenCalled();
     });
+
+    test('should keep system feedback internal and skip user-visible input log', async () => {
+        cm = new ConversationManager(mockBrain, mockShunter, mockController);
+        const observation = '[System Observation]\n' + 'tool result '.repeat(500);
+
+        cm.queue.push({
+            ctx: mockCtx,
+            text: observation,
+            attachment: null,
+            options: {
+                isSystemFeedback: true,
+                allowActions: false,
+                bypassDebounce: true
+            }
+        });
+        await cm._processQueue();
+
+        expect(mockBrain._appendChatLog).not.toHaveBeenCalledWith(expect.objectContaining({
+            sender: 'User',
+            content: observation
+        }));
+        expect(mockBrain.recall).not.toHaveBeenCalled();
+        expect(mockBrain.sendMessage).toHaveBeenCalledWith(
+            observation,
+            false,
+            expect.objectContaining({
+                isSystemFeedback: true,
+                allowActions: false
+            })
+        );
+        expect(mockShunter.dispatch).toHaveBeenCalledWith(
+            mockCtx,
+            '[GOLEM_REPLY] AI Response',
+            mockBrain,
+            mockController,
+            expect.objectContaining({
+                isSystemFeedback: true,
+                allowActions: false
+            })
+        );
+    });
 });

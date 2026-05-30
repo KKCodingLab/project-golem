@@ -1846,19 +1846,6 @@
     }
   },
   {
-    "title": "upsurge-searxng",
-    "id": "upsurge-searxng",
-    "repoUrl": "https://github.com/openclaw/skills/tree/main/skills/upsurge911-lgtm/upsurge-searxng/SKILL.md",
-    "description": "Private Intelligence Radar for Agents.",
-    "category": "communication",
-    "description_zh": "特務私人情報雷達。",
-    "original_description": "Private Intelligence Radar for Agents.",
-    "category_name": {
-      "en": "Communication",
-      "zh": "通訊聯絡"
-    }
-  },
-  {
     "title": "v2ex",
     "id": "v2ex",
     "repoUrl": "https://github.com/openclaw/skills/tree/main/skills/timqian/v2ex/SKILL.md",

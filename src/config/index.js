@@ -36,6 +36,19 @@ const parseBooleanEnv = (value, defaultValue = true) => {
     return !['false', '0', 'off', 'no'].includes(cleanEnv(value).toLowerCase());
 };
 
+// [Fix] 解析睡眠時間設定，支援 HH:mm 與純數字兩種格式
+// cleanEnv 不會移除冒號，但 Number("23:00") === NaN，需在此處理
+const parseHourEnv = (value, defaultValue) => {
+    if (value === undefined || value === null) return defaultValue;
+    const raw = String(value).trim();
+    if (raw.includes(':')) {
+        const hour = parseInt(raw.split(':')[0], 10);
+        return Number.isFinite(hour) ? hour : defaultValue;
+    }
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : defaultValue;
+};
+
 const CONFIG = {
     TG_TOKEN: cleanEnv(process.env.TELEGRAM_TOKEN),
     TG_AUTH_MODE: cleanEnv(process.env.TG_AUTH_MODE) || 'ADMIN',
@@ -63,8 +76,8 @@ const CONFIG = {
     AUTONOMY_ENABLED: parseBooleanEnv(process.env.GOLEM_AUTONOMY_ENABLED, true),
     AWAKE_INTERVAL_MIN: Number(cleanEnv(process.env.GOLEM_AWAKE_INTERVAL_MIN)) || 10, // 預設最小 10 分鐘
     AWAKE_INTERVAL_MAX: Number(cleanEnv(process.env.GOLEM_AWAKE_INTERVAL_MAX)) || 60, // 預設最大 60 分鐘
-    SLEEP_START: process.env.GOLEM_SLEEP_START !== undefined ? Number(cleanEnv(process.env.GOLEM_SLEEP_START)) : 1, // 預設凌晨 1 點
-    SLEEP_END: process.env.GOLEM_SLEEP_END !== undefined ? Number(cleanEnv(process.env.GOLEM_SLEEP_END)) : 7, // 預設早上 7 點
+    SLEEP_START: process.env.GOLEM_SLEEP_START !== undefined ? parseHourEnv(process.env.GOLEM_SLEEP_START, 1) : 1, // 預設凌晨 1 點
+    SLEEP_END: process.env.GOLEM_SLEEP_END !== undefined ? parseHourEnv(process.env.GOLEM_SLEEP_END, 7) : 7, // 預設早上 7 點
     USER_INTERESTS: cleanEnv(process.env.USER_INTERESTS || '科技圈熱門話題,全球趣聞', true),
     ENABLE_LOG_NOTIFICATIONS: (process.env.ENABLE_LOG_NOTIFICATIONS === 'true'),
     ARCHIVE_CHECK_INTERVAL: Number(cleanEnv(process.env.ARCHIVE_CHECK_INTERVAL)) || 30,
@@ -172,8 +185,8 @@ const reloadConfig = () => {
     CONFIG.AUTONOMY_ENABLED = parseBooleanEnv(process.env.GOLEM_AUTONOMY_ENABLED, true);
     CONFIG.AWAKE_INTERVAL_MIN = Number(cleanEnv(process.env.GOLEM_AWAKE_INTERVAL_MIN)) || 10;
     CONFIG.AWAKE_INTERVAL_MAX = Number(cleanEnv(process.env.GOLEM_AWAKE_INTERVAL_MAX)) || 60;
-    CONFIG.SLEEP_START = process.env.GOLEM_SLEEP_START !== undefined ? Number(cleanEnv(process.env.GOLEM_SLEEP_START)) : 1;
-    CONFIG.SLEEP_END = process.env.GOLEM_SLEEP_END !== undefined ? Number(cleanEnv(process.env.GOLEM_SLEEP_END)) : 7;
+    CONFIG.SLEEP_START = process.env.GOLEM_SLEEP_START !== undefined ? parseHourEnv(process.env.GOLEM_SLEEP_START, 1) : 1;
+    CONFIG.SLEEP_END = process.env.GOLEM_SLEEP_END !== undefined ? parseHourEnv(process.env.GOLEM_SLEEP_END, 7) : 7;
     CONFIG.USER_INTERESTS = cleanEnv(process.env.USER_INTERESTS || '科技圈熱門話題,全球趣聞', true);
     CONFIG.ENABLE_LOG_NOTIFICATIONS = (process.env.ENABLE_LOG_NOTIFICATIONS === 'true');
     CONFIG.ARCHIVE_CHECK_INTERVAL = Number(cleanEnv(process.env.ARCHIVE_CHECK_INTERVAL)) || 30;
@@ -224,6 +237,7 @@ module.exports = {
     normalizeBackend,
     normalizeEmbeddingProvider,
     parseBooleanEnv,
+    parseHourEnv,
     CONFIG,
     GOLEMS_CONFIG,
     GOLEM_MODE,

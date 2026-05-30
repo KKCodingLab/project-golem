@@ -308,6 +308,15 @@ function formatNumber(value: number | null | undefined, locale: string, fraction
     }).format(numericValue);
 }
 
+function formatSignedNumber(value: number | null | undefined, locale: string, fractionDigits = 2) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return "--";
+    const formatted = formatNumber(Math.abs(numericValue), locale, fractionDigits);
+    if (numericValue > 0) return `+${formatted}`;
+    if (numericValue < 0) return `-${formatted}`;
+    return formatted;
+}
+
 function formatCompact(value: number | null | undefined, locale: string) {
     const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return "--";
@@ -1206,12 +1215,17 @@ export default function StockAnalysisPage() {
                                 {[
                                     { label: isEnglish ? "Open" : "開盤", value: formatNumber(selectedQuote?.open, localeCode) },
                                     { label: isEnglish ? "Prev Close" : "昨收", value: formatNumber(selectedQuote?.previousClose, localeCode) },
+                                    {
+                                        label: isEnglish ? "Price Change" : "價格變動",
+                                        value: `${selectedQuote?.currency || ""} ${formatSignedNumber(selectedQuote?.change, localeCode)}`.trim(),
+                                        tone: getQuoteTone(selectedQuote?.change),
+                                    },
                                     { label: isEnglish ? "Volume" : "成交量", value: formatCompact(selectedQuote?.volume, localeCode) },
                                     { label: isEnglish ? "Mkt Cap" : "市值", value: formatCompact(selectedQuote?.marketCap, localeCode) },
                                 ].map((item) => (
                                     <div key={item.label} className="rounded-lg border border-border bg-background p-3">
                                         <div className="text-xs text-muted-foreground">{item.label}</div>
-                                        <div className="mt-1 text-base font-semibold">{item.value}</div>
+                                        <div className={cn("mt-1 text-base font-semibold", item.tone)}>{item.value}</div>
                                     </div>
                                 ))}
                             </div>
@@ -1279,13 +1293,14 @@ export default function StockAnalysisPage() {
                             </div>
                         </CardHeader>
                         <CardContent className="overflow-x-auto">
-                            <table className="w-full min-w-[920px] text-sm">
+                            <table className="w-full min-w-[1040px] text-sm">
                                 <thead>
                                     <tr className="border-b border-border text-left text-xs text-muted-foreground">
                                         <th className="pb-3 font-semibold">{isEnglish ? "Symbol" : "代號"}</th>
                                         <th className="pb-3 font-semibold">{isEnglish ? "Market" : "市場"}</th>
                                         <th className="pb-3 text-right font-semibold">{isEnglish ? "Price" : "價格"}</th>
-                                        <th className="pb-3 text-right font-semibold">{isEnglish ? "Change" : "漲跌"}</th>
+                                        <th className="pb-3 text-right font-semibold">{isEnglish ? "Price Change" : "價格變動"}</th>
+                                        <th className="pb-3 text-right font-semibold">{isEnglish ? "% Change" : "漲跌幅"}</th>
                                         <th className="pb-3 text-right font-semibold">{isEnglish ? "Volume" : "成交量"}</th>
                                         <th className="pb-3 text-right font-semibold">{isEnglish ? "Turnover" : "成交值"}</th>
                                         <th className="pb-3 font-semibold">{isEnglish ? "Source" : "來源"}</th>
@@ -1295,7 +1310,7 @@ export default function StockAnalysisPage() {
                                 <tbody>
                                     {isLoadingQuotes && !quotes.length ? (
                                         <tr>
-                                            <td colSpan={8} className="py-10 text-center text-muted-foreground">
+                                            <td colSpan={9} className="py-10 text-center text-muted-foreground">
                                                 <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                                                 {isEnglish ? "Loading quotes..." : "讀取行情中..."}
                                             </td>
@@ -1319,6 +1334,9 @@ export default function StockAnalysisPage() {
                                                 </span>
                                             </td>
                                             <td className="py-3 text-right font-semibold">{quote.currency} {formatNumber(quote.price, localeCode)}</td>
+                                            <td className={cn("py-3 text-right font-semibold", getQuoteTone(quote.change))}>
+                                                {quote.currency} {formatSignedNumber(quote.change, localeCode)}
+                                            </td>
                                             <td className={cn("py-3 text-right font-semibold", getQuoteTone(quote.change))}>
                                                 {quote.changePercent >= 0 ? "+" : ""}
                                                 {formatNumber(quote.changePercent, localeCode)}%

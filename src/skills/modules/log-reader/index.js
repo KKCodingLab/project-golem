@@ -2,7 +2,7 @@
 // 負責讀取與檢索每日日誌摘要
 
 async function run(ctx) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
 
     let logManager;
     if (ctx.brain && ctx.brain.chatLogManager) {
@@ -31,7 +31,7 @@ async function run(ctx) {
             }
 
             const list = summaries.map(s => s.date_string).join(', ');
-            return `📅 現有摘要日期列表：\n${list}\n\n你可以使用 {"action": "log_read", "task": "get", "date": "日期"} 來讀取內容。`;
+            return `📅 現有摘要日期列表：\n${list}\n\n你可以使用 {"action":"log-reader","args":{"task":"get","date":"日期"}} 來讀取內容。`;
         }
 
         if (task === 'get') {

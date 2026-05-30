@@ -13,7 +13,7 @@ function extractCommand(args = {}) {
 }
 
 async function run(ctx = {}) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     const command = String(extractCommand(args) || '').trim();
     if (!command) return '❌ sys-admin 缺少 command 參數。';
 

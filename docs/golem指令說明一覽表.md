@@ -14,6 +14,11 @@
 | `/new` | **物理重生** | 當對話卡死，或是網頁跳出阻擋視窗時使用。強制重新整理底層瀏覽器，回到 Gemini 根目錄，開啟一個**全新的對話視窗**。 |
 | `/new_memory`| **徹底轉生** | 當想要 Golem 完全忘記過去的所有專案細節時使用。**物理清空底層資料庫 (DB)** 並重置對話，讓 Golem 變成一張白紙。 |
 | `/model` | **模型切換** | 操控底層的網頁 UI，實體切換 Gemini 的大腦模型（例如切換 Fast / Thinking / Pro 模式）。 |
+| `/install skill <path>` | **安裝技能套件** | 從本機技能資料夾安裝新技能（資料夾內需有 `manifest.json`），安裝後會自動同步 capability/example/vector 索引。 |
+| `/install skill-gh <url>` | **遠端安裝技能** | 從 GitHub repo/tree URL 安裝技能。 |
+| `/install mcp-file <path>` | **安裝 MCP（檔案）** | 從本機 JSON 設定檔新增或更新 MCP 伺服器設定。 |
+| `/install mcp-json <json>` | **安裝 MCP（JSON）** | 直接貼一行 JSON 來新增或更新 MCP 伺服器設定（至少要有 `name`, `command`）。 |
+| `/install mcp-url <url>` | **遠端安裝 MCP** | 從 HTTPS JSON URL 新增或更新 MCP 伺服器設定。 |
 
 ---
 

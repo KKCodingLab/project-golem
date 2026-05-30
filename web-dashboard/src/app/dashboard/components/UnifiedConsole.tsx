@@ -26,6 +26,8 @@ type MetricsState = {
     agentWorkerIdleTimeouts: number;
     agentWorkerDraftPendingChecks: number;
     lastAgentWorkerEvent: string;
+    actionGateRejections: number;
+    lastActionGateReject: string;
     memUsage: number;
     cpuUsage: number;
 };
@@ -58,7 +60,7 @@ type SystemStatusData = {
     };
 };
 
-type MetricsUpdatePayload = Partial<Pick<MetricsState, "uptime" | "queueCount" | "lastSchedule" | "agentWorkersActive" | "agentWorkerTimeouts" | "agentWorkerSendTimeouts" | "agentWorkerIdleTimeouts" | "agentWorkerDraftPendingChecks" | "lastAgentWorkerEvent" | "memUsage" | "cpuUsage">>;
+type MetricsUpdatePayload = Partial<Pick<MetricsState, "uptime" | "queueCount" | "lastSchedule" | "agentWorkersActive" | "agentWorkerTimeouts" | "agentWorkerSendTimeouts" | "agentWorkerIdleTimeouts" | "agentWorkerDraftPendingChecks" | "lastAgentWorkerEvent" | "actionGateRejections" | "lastActionGateReject" | "memUsage" | "cpuUsage">>;
 
 type HeartbeatPayload = {
     uptime?: string;
@@ -162,6 +164,7 @@ function parseMetricsUpdate(payload: unknown): MetricsUpdatePayload | null {
     if (typeof payload.uptime === "string") patch.uptime = payload.uptime;
     if (typeof payload.lastSchedule === "string") patch.lastSchedule = payload.lastSchedule;
     if (typeof payload.lastAgentWorkerEvent === "string") patch.lastAgentWorkerEvent = payload.lastAgentWorkerEvent;
+    if (typeof payload.lastActionGateReject === "string") patch.lastActionGateReject = payload.lastActionGateReject;
 
     const queueCount = parseNumber(payload.queueCount);
     if (queueCount !== null) patch.queueCount = queueCount;
@@ -175,6 +178,8 @@ function parseMetricsUpdate(payload: unknown): MetricsUpdatePayload | null {
     if (agentWorkerIdleTimeouts !== null) patch.agentWorkerIdleTimeouts = agentWorkerIdleTimeouts;
     const agentWorkerDraftPendingChecks = parseNumber(payload.agentWorkerDraftPendingChecks);
     if (agentWorkerDraftPendingChecks !== null) patch.agentWorkerDraftPendingChecks = agentWorkerDraftPendingChecks;
+    const actionGateRejections = parseNumber(payload.actionGateRejections);
+    if (actionGateRejections !== null) patch.actionGateRejections = actionGateRejections;
 
     const memUsage = parseNumber(payload.memUsage);
     if (memUsage !== null) patch.memUsage = memUsage;
@@ -248,6 +253,8 @@ export default function UnifiedConsole({
         agentWorkerIdleTimeouts: 0,
         agentWorkerDraftPendingChecks: 0,
         lastAgentWorkerEvent: "N/A",
+        actionGateRejections: 0,
+        lastActionGateReject: "N/A",
         memUsage: 0,
         cpuUsage: 0,
     });
@@ -306,6 +313,12 @@ export default function UnifiedConsole({
     const handleShutdown = async () => {
         setIsLoading(true);
         try {
+            const golemId = activeGolem || "golem_A";
+            try {
+                await apiPost("/api/golems/stop", { id: golemId });
+            } catch (stopError) {
+                console.warn("Pre-shutdown stop failed, continuing shutdown:", stopError);
+            }
             const data = await apiPost<{ success?: boolean }>("/api/system/shutdown");
             if (data.success) {
                 setConfirmDialog((prev) => ({ ...prev, open: false }));
@@ -554,7 +567,7 @@ export default function UnifiedConsole({
         const lastFiveMinutes = recentLogEvents.filter((event) => event.ts >= fiveMinuteStart);
 
         const errorsLastMinute = lastMinute.filter((event) => event.type === "error").length;
-        const agentEventsLastMinute = lastMinute.filter((event) => event.type === "agent" || event.type === "queue").length;
+        const agentEventsLastMinute = lastMinute.filter((event) => event.type === "agent" || event.type === "queue" || event.type === "action_gate").length;
 
         const fiveMinuteErrors = lastFiveMinutes.filter((event) => event.type === "error").length;
         const fiveMinuteErrorRate = lastFiveMinutes.length > 0
@@ -583,7 +596,7 @@ export default function UnifiedConsole({
         { id: "golemCount", label: isEnglish ? "Golem Instances" : "Golem 實體數", description: isEnglish ? "Number of managed golem instances" : "目前管理中的 golem 實體數量" },
         { id: "logsPerMinute", label: isEnglish ? "Logs / Min" : "每分鐘日誌量", description: isEnglish ? "Ingested logs in the last 60s" : "最近 60 秒接收日誌數" },
         { id: "errorRate", label: isEnglish ? "5m Error Rate" : "5 分鐘錯誤率", description: isEnglish ? "Error ratio over the last 5 minutes" : "最近 5 分鐘錯誤事件比例" },
-        { id: "agentEvents", label: isEnglish ? "Agent Events / Min" : "每分鐘 Agent 事件", description: isEnglish ? "Agent + queue events in the last 60s" : "最近 60 秒 Agent / Queue 事件量" },
+        { id: "agentEvents", label: isEnglish ? "Agent Events / Min" : "每分鐘 Agent 事件", description: isEnglish ? "Agent + queue + action-gate events in the last 60s" : "最近 60 秒 Agent / Queue / Action Gate 事件量" },
     ] as const), [isEnglish]);
 
     const allMetricCards = useMemo<DashboardMetricCard[]>(() => {
@@ -1016,7 +1029,9 @@ export default function UnifiedConsole({
                                             <StatusItem label={isEnglish ? "Send Timeouts" : "發訊逾時"} value={String(metrics.agentWorkerSendTimeouts)} color={metrics.agentWorkerSendTimeouts > 0 ? "destructive" : "primary"} />
                                             <StatusItem label={isEnglish ? "Idle Timeouts" : "閒置逾時"} value={String(metrics.agentWorkerIdleTimeouts)} color={metrics.agentWorkerIdleTimeouts > 0 ? "destructive" : "primary"} />
                                             <StatusItem label={isEnglish ? "Draft Pending Checks" : "未送出訊息檢查"} value={String(metrics.agentWorkerDraftPendingChecks)} color={metrics.agentWorkerDraftPendingChecks > 0 ? "primary" : undefined} />
+                                            <StatusItem label={isEnglish ? "Action Gate Rejects" : "Action Gate 阻擋"} value={String(metrics.actionGateRejections)} color={metrics.actionGateRejections > 0 ? "destructive" : "primary"} />
                                             <StatusItem label={isEnglish ? "Worker Last Event" : "子代理最後事件"} value={metrics.lastAgentWorkerEvent || "N/A"} />
+                                            <StatusItem label={isEnglish ? "Last Gate Reject" : "最後阻擋事件"} value={metrics.lastActionGateReject || "N/A"} />
                                             <StatusItem label={isEnglish ? "Health Score" : "健康分數"} value={healthScore.value} color={healthScore.total > 0 && healthScore.passed === healthScore.total ? "primary" : "destructive"} />
                                         </ul>
                                     </div>
@@ -1056,7 +1071,7 @@ export default function UnifiedConsole({
                             <div className="xl:col-span-8 enterprise-card border border-border rounded-2xl overflow-hidden min-h-[540px]">
                                 <PanelHeader icon={<span className="text-[10px]">📡</span>} title={isEnglish ? "Signal Overview (Latest Logs)" : "訊號總覽（最新日誌）"} />
                                 <div className="p-4 h-[540px]">
-                                    <LogStream className="h-full" types={["general", "error", "queue", "agent"]} showHeader={false} />
+                                    <LogStream className="h-full" types={["general", "error", "queue", "agent", "action_gate"]} showHeader={false} />
                                 </div>
                             </div>
                         </div>
@@ -1092,7 +1107,7 @@ export default function UnifiedConsole({
                             <div className="enterprise-card border border-border rounded-2xl overflow-hidden h-[400px]">
                                 <PanelHeader icon={<span className="text-[10px]">🚦</span>} title={isEnglish ? "Traffic Monitor" : "流量監控"} />
                                 <div className="p-4 h-[calc(400px-2.25rem)]">
-                                    <LogStream className="h-full" types={["queue", "agent"]} autoScroll={false} showHeader={false} />
+                                    <LogStream className="h-full" types={["queue", "agent", "action_gate"]} autoScroll={false} showHeader={false} />
                                 </div>
                             </div>
                         </div>

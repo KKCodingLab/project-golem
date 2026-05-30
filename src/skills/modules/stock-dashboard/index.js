@@ -58,7 +58,7 @@ function resolveSymbols(args = {}) {
 }
 
 async function run(ctx = {}) {
-    const args = ctx.args || {};
+    const args = ctx.args || ctx.parameters || {};
     const symbols = resolveSymbols(args);
     const selectedSymbol = normalizeSymbol(args.selectedSymbol || args.selected || symbols[0]);
     const selectedRange = String(args.selectedRange || args.range || '1D').toUpperCase();
